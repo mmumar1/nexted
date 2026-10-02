@@ -1,28 +1,21 @@
 import { createClient } from "@supabase/supabase-js";
 
-function getSupabaseConfig() {
-  const url = process.env.VITE_SUPABASE_URL;
-  const anonKey = process.env.VITE_SUPABASE_ANON_KEY;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!url || !anonKey || !serviceRoleKey) {
-    throw new Error(
-      "Missing VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY, or SUPABASE_SERVICE_ROLE_KEY",
-    );
-  }
-
-  return { url, anonKey, serviceRoleKey };
+function requiredEnv(name: string, value: string | undefined): string {
+  if (!value) throw new Error(`Missing Supabase environment variable: ${name}`);
+  return value;
 }
 
 export function createSupabaseAuthClient() {
-  const { url, anonKey } = getSupabaseConfig();
+  const url = requiredEnv("VITE_SUPABASE_URL", process.env.VITE_SUPABASE_URL);
+  const anonKey = requiredEnv("VITE_SUPABASE_ANON_KEY", process.env.VITE_SUPABASE_ANON_KEY);
   return createClient(url, anonKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 }
 
 export function createSupabaseAdminClient() {
-  const { url, serviceRoleKey } = getSupabaseConfig();
+  const url = requiredEnv("VITE_SUPABASE_URL", process.env.VITE_SUPABASE_URL);
+  const serviceRoleKey = requiredEnv("SUPABASE_SERVICE_ROLE_KEY", process.env.SUPABASE_SERVICE_ROLE_KEY);
   return createClient(url, serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });

@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useRoute, useLocation } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Navbar } from "@/components/navbar";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
@@ -9,10 +9,12 @@ import { ChevronLeft, Menu } from "lucide-react";
 import { Link } from "wouter";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerTrigger } from "@/components/ui/drawer";
 import { useAuth } from "@/lib/auth-context";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Module, Course, ModuleCompletion } from "@shared/schema";
 import { ModuleContent } from "@/components/course/module-content";
 import { ModuleSidebar, type CourseModuleItem } from "@/components/course/module-sidebar";
 import { isModuleUnlocked } from "@/lib/access-rules";
+import { compareModuleOrder } from "@/lib/module-utils";
 
 export default function CoursePage() {
   const [, legacyParams] = useRoute("/course/:id");
@@ -53,6 +55,16 @@ export default function CoursePage() {
     enabled: !!user?.id,
   });
 
+  const markModuleCompleteMutation = useMutation({
+    mutationFn: (moduleId: string) => apiRequest("POST", "/api/module-completions", { userId: user?.id, moduleId }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["/api/module-completions", user?.id, courseId] }),
+        queryClient.invalidateQueries({ queryKey: ["/api/dashboard", user?.id] }),
+      ]);
+    },
+  });
+
   if (!user) return null;
 
   const hasActiveSubscription = !!user.hasActiveSubscription;
@@ -63,8 +75,9 @@ export default function CoursePage() {
   );
   const passedQuizModuleIds = new Set(quizProgress?.passedModuleIds || []);
 
+  const orderedModules = [...(modules ?? [])].sort((a, b) => compareModuleOrder(a, b, modules ?? []));
   const baseModulesWithCompletion: CourseModuleItem[] =
-    modules?.map((m) => ({
+    orderedModules.map((m) => ({
       ...m,
       isCompleted: completedModuleIds.has(m.id) || (m.hasQuiz && passedQuizModuleIds.has(m.id)),
       isLocked: false,
@@ -74,13 +87,18 @@ export default function CoursePage() {
 
   const moduleMap = new Map(baseModulesWithCompletion.map((module) => [module.id, module]));
 
-  const modulesWithCompletion: CourseModuleItem[] = baseModulesWithCompletion.map((module) => {
+  const modulesWithCompletion: CourseModuleItem[] = baseModulesWithCompletion.map((module, index) => {
     const prerequisiteModule = module.prerequisiteModuleId ? moduleMap.get(module.prerequisiteModuleId) : undefined;
+    const previousModule = index > 0 ? baseModulesWithCompletion[index - 1] : undefined;
     const isLocked = !isModuleUnlocked({
       hasPrerequisite: !!module.prerequisiteModuleId,
       prerequisiteCompleted: !!prerequisiteModule?.isCompleted,
       prerequisiteHasQuiz: !!prerequisiteModule?.hasQuiz,
       prerequisiteQuizPassed: !!prerequisiteModule?.isQuizPassed,
+      hasPreviousModule: !!previousModule,
+      previousModuleCompleted: !!previousModule?.isCompleted,
+      previousModuleHasQuiz: !!previousModule?.hasQuiz,
+      previousModuleQuizPassed: !!previousModule?.isQuizPassed,
       hasActiveSubscription,
       isModuleWithinFreeTier: module.order <= 2,
     });
@@ -215,6 +233,8 @@ export default function CoursePage() {
               nextModule={nextModule}
               onTakeQuiz={() => handleTakeQuiz(activeModule.id)}
               onSelectModule={handleSelectModule}
+              onMarkComplete={() => markModuleCompleteMutation.mutate(activeModule.id)}
+              isMarkingComplete={markModuleCompleteMutation.isPending}
             />
           </div>
         ) : (

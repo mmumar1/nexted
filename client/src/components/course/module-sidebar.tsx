@@ -71,6 +71,8 @@ export function ModuleSidebar({ modules, activeModuleId, onSelect }: ModuleSideb
       return (
         <AccordionItem value={module.id} key={module.id} className="border-0">
           <AccordionTrigger
+            disabled={module.isLocked}
+            onClick={() => onSelect(module.id)}
             className={cn(
               "rounded-md px-2 py-2 text-left hover:no-underline",
               isActive && "bg-primary text-primary-foreground",
@@ -90,10 +92,15 @@ export function ModuleSidebar({ modules, activeModuleId, onSelect }: ModuleSideb
                 </span>
                 {module.isCompleted && !isActive && <Badge variant="secondary" className="shrink-0 text-[10px]">Done</Badge>}
               </div>
-              <div className="pl-7">
+              <div className="flex flex-wrap gap-2 pl-7">
                 <Badge variant={isActive ? "secondary" : "outline"} className="w-fit text-[10px]">
                   {submoduleCount} submodules
                 </Badge>
+                {module.hasQuiz && (
+                  <Badge variant={isActive ? "secondary" : "outline"} className="w-fit text-[10px]">
+                    {module.isQuizPassed ? "Quiz passed" : "Quiz required"}
+                  </Badge>
+                )}
               </div>
             </div>
           </AccordionTrigger>

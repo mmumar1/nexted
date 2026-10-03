@@ -12,10 +12,12 @@ import {
   insertModuleCompletionSchema,
   insertQuizAttemptSchema,
   insertProjectSchema,
+  type Module,
   type QuizQuestion,
 } from "../shared/schema.js";
 import { z } from "zod";
 import { createSupabaseAdminClient, createSupabaseAuthClient } from "./supabase-admin.js";
+import { compareModuleOrder } from "../shared/module-utils.js";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Authentication routes
@@ -85,6 +87,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
   };
 
   const isSuperAdmin = (role?: string | null) => ["admin", "super_admin", "superadmin"].includes(role || "");
+
+  const canAccessModule = async (userId: string, module: Module) => {
+    const courseModules = await storage.getModulesByCourse(module.courseId);
+    const orderedModules = courseModules.sort((a, b) => compareModuleOrder(a, b, courseModules));
+    const moduleIndex = orderedModules.findIndex((item) => item.id === module.id);
+    if (moduleIndex < 0) return false;
+
+    const requirements = new Map<string, Module>();
+    if (moduleIndex > 0) requirements.set(orderedModules[moduleIndex - 1].id, orderedModules[moduleIndex - 1]);
+    if (module.prerequisiteModuleId) {
+      const prerequisite = orderedModules.find((item) => item.id === module.prerequisiteModuleId)
+        ?? await storage.getModule(module.prerequisiteModuleId);
+      if (!prerequisite) return false;
+      requirements.set(prerequisite.id, prerequisite);
+    }
+
+    const passedQuizModuleIds = await storage.getPassedQuizModuleIds(userId, module.courseId);
+    for (const requirement of Array.from(requirements.values())) {
+      const hasQuiz = !!(await storage.getQuizByModule(requirement.id));
+      const requirementSatisfied = hasQuiz
+        ? passedQuizModuleIds.has(requirement.id)
+        : await storage.isModuleCompleted(userId, requirement.id);
+      if (!requirementSatisfied) return false;
+    }
+
+    return true;
+  };
 
   const generateTemporaryPassword = () => `Learnpedia-${randomBytes(4).toString("hex")}!`;
 
@@ -646,12 +675,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Module not found" });
       }
 
-      if (module.prerequisiteModuleId) {
-        const prerequisiteCompleted = await storage.isModuleCompleted(data.userId, module.prerequisiteModuleId);
-        const passedPrerequisiteQuiz = (await storage.getPassedQuizModuleIds(data.userId, module.courseId)).has(module.prerequisiteModuleId);
-        if (!prerequisiteCompleted || !passedPrerequisiteQuiz) {
-          return res.status(403).json({ error: "Complete the prerequisite module and pass its quiz first" });
-        }
+      if (!(await canAccessModule(data.userId, module))) {
+        return res.status(403).json({ error: "Complete the previous module and its quiz, if present, first" });
+      }
+
+      const currentQuiz = await storage.getQuizByModule(module.id);
+      if (currentQuiz && !(await storage.getPassedQuizModuleIds(data.userId, module.courseId)).has(module.id)) {
+        return res.status(403).json({ error: "Pass this module's quiz before marking it complete" });
       }
       
       // Check if already completed
@@ -731,6 +761,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const quiz = await storage.getQuiz(data.quizId);
       if (!quiz) {
         return res.status(404).json({ error: "Quiz not found" });
+      }
+
+      const module = await storage.getModule(quiz.moduleId);
+      if (!module) return res.status(404).json({ error: "Module not found" });
+      if (!(await canAccessModule(data.userId, module))) {
+        return res.status(403).json({ error: "Complete the previous module and its quiz, if present, first" });
       }
 
       const percentage = data.totalQuestions > 0 ? (data.score / data.totalQuestions) * 100 : 0;

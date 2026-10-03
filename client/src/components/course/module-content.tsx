@@ -11,6 +11,8 @@ interface ModuleContentProps {
   nextModule?: Module;
   onTakeQuiz: () => void;
   onSelectModule: (moduleId: string) => void;
+  onMarkComplete: () => void;
+  isMarkingComplete: boolean;
 }
 
 export function ModuleContent({
@@ -19,9 +21,11 @@ export function ModuleContent({
   nextModule,
   onTakeQuiz,
   onSelectModule,
+  onMarkComplete,
+  isMarkingComplete,
 }: ModuleContentProps) {
   const embedUrl = normalizeYouTubeEmbedUrl(module.videoUrl);
-  const canGoNext = !!nextModule && module.isCompleted;
+  const canGoNext = !!nextModule && module.isCompleted && (!module.hasQuiz || module.isQuizPassed);
   const moduleLabel = getModuleDisplayLabel(module, [previousModule ?? module, nextModule ?? module, module].filter(Boolean) as Module[]);
 
   return (
@@ -66,6 +70,11 @@ export function ModuleContent({
             <Button className="gap-2" onClick={onTakeQuiz} data-testid={`button-take-quiz-${module.id}`}>
               <Play className="h-4 w-4" />
               Take Module Quiz
+            </Button>
+          )}
+          {!module.hasQuiz && !module.isCompleted && (
+            <Button onClick={onMarkComplete} disabled={isMarkingComplete} data-testid={`button-complete-module-${module.id}`}>
+              {isMarkingComplete ? "Saving..." : "Mark module complete"}
             </Button>
           )}
         </div>

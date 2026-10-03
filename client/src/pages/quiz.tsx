@@ -12,6 +12,7 @@ import { XCircle, ChevronLeft, Trophy } from "lucide-react";
 import { Link } from "wouter";
 import { useAuth } from "@/lib/auth-context";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { compareModuleOrder } from "@/lib/module-utils";
 import type { Module, QuizQuestion } from "@shared/schema";
 
 interface QuizData {
@@ -123,9 +124,9 @@ export default function Quiz() {
       return;
     }
 
-    const nextModule = courseModules
-      .filter((item) => item.order > (module.order || 0))
-      .sort((a, b) => a.order - b.order)[0];
+    const orderedModules = [...courseModules].sort((a, b) => compareModuleOrder(a, b, courseModules));
+    const currentIndex = orderedModules.findIndex((item) => item.id === moduleId);
+    const nextModule = currentIndex >= 0 ? orderedModules[currentIndex + 1] : undefined;
 
     if (nextModule) {
       setLocation(`/course/${courseId}/module/${nextModule.id}`);

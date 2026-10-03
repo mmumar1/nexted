@@ -12,6 +12,10 @@ export interface ModuleAccessState {
   prerequisiteCompleted: boolean;
   prerequisiteHasQuiz: boolean;
   prerequisiteQuizPassed: boolean;
+  hasPreviousModule?: boolean;
+  previousModuleCompleted?: boolean;
+  previousModuleHasQuiz?: boolean;
+  previousModuleQuizPassed?: boolean;
   hasActiveSubscription?: boolean;
   isModuleWithinFreeTier?: boolean;
 }
@@ -19,6 +23,11 @@ export interface ModuleAccessState {
 export function isModuleUnlocked(state: ModuleAccessState): boolean {
   if (!state.hasActiveSubscription && state.isModuleWithinFreeTier === false) {
     return false;
+  }
+
+  if (state.hasPreviousModule) {
+    if (!state.previousModuleCompleted) return false;
+    if (state.previousModuleHasQuiz && !state.previousModuleQuizPassed) return false;
   }
 
   if (!state.hasPrerequisite) {

@@ -51,4 +51,38 @@ describe('access rules', () => {
 
     assert.equal(isModuleUnlocked(state), true);
   });
+
+  it('requires completion of the previous module before unlocking the next', () => {
+    const state: ModuleAccessState = {
+      hasPrerequisite: false,
+      prerequisiteCompleted: false,
+      prerequisiteHasQuiz: false,
+      prerequisiteQuizPassed: false,
+      hasPreviousModule: true,
+      previousModuleCompleted: false,
+      previousModuleHasQuiz: false,
+      previousModuleQuizPassed: false,
+      hasActiveSubscription: true,
+    };
+
+    assert.equal(isModuleUnlocked(state), false);
+    assert.equal(isModuleUnlocked({ ...state, previousModuleCompleted: true }), true);
+  });
+
+  it('requires the previous module quiz pass mark when that module has a quiz', () => {
+    const state: ModuleAccessState = {
+      hasPrerequisite: false,
+      prerequisiteCompleted: false,
+      prerequisiteHasQuiz: false,
+      prerequisiteQuizPassed: false,
+      hasPreviousModule: true,
+      previousModuleCompleted: true,
+      previousModuleHasQuiz: true,
+      previousModuleQuizPassed: false,
+      hasActiveSubscription: true,
+    };
+
+    assert.equal(isModuleUnlocked(state), false);
+    assert.equal(isModuleUnlocked({ ...state, previousModuleQuizPassed: true }), true);
+  });
 });

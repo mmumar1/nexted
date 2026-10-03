@@ -28,9 +28,8 @@ describe('access rules', () => {
 
   it('locks modules beyond the free tier for non-subscribers', () => {
     const state: ModuleAccessState = {
-      hasPrerequisite: false,
-      prerequisiteCompleted: false,
-      prerequisiteHasQuiz: false,
+      hasUnpassedPreviousQuiz: false,
+      hasPrerequisiteQuiz: false,
       prerequisiteQuizPassed: false,
       hasActiveSubscription: false,
       isModuleWithinFreeTier: false,
@@ -41,9 +40,8 @@ describe('access rules', () => {
 
   it('allows a module when all prerequisite steps are satisfied', () => {
     const state: ModuleAccessState = {
-      hasPrerequisite: true,
-      prerequisiteCompleted: true,
-      prerequisiteHasQuiz: true,
+      hasUnpassedPreviousQuiz: false,
+      hasPrerequisiteQuiz: true,
       prerequisiteQuizPassed: true,
       hasActiveSubscription: true,
       isModuleWithinFreeTier: true,
@@ -52,37 +50,38 @@ describe('access rules', () => {
     assert.equal(isModuleUnlocked(state), true);
   });
 
-  it('requires completion of the previous module before unlocking the next', () => {
+  it('allows navigation without manual completion when prior modules have no quiz', () => {
     const state: ModuleAccessState = {
-      hasPrerequisite: false,
-      prerequisiteCompleted: false,
-      prerequisiteHasQuiz: false,
+      hasUnpassedPreviousQuiz: false,
+      hasPrerequisiteQuiz: false,
       prerequisiteQuizPassed: false,
-      hasPreviousModule: true,
-      previousModuleCompleted: false,
-      previousModuleHasQuiz: false,
-      previousModuleQuizPassed: false,
       hasActiveSubscription: true,
     };
 
-    assert.equal(isModuleUnlocked(state), false);
-    assert.equal(isModuleUnlocked({ ...state, previousModuleCompleted: true }), true);
+    assert.equal(isModuleUnlocked(state), true);
   });
 
-  it('requires the previous module quiz pass mark when that module has a quiz', () => {
+  it('requires passing any earlier module quiz before unlocking later modules', () => {
     const state: ModuleAccessState = {
-      hasPrerequisite: false,
-      prerequisiteCompleted: false,
-      prerequisiteHasQuiz: false,
+      hasUnpassedPreviousQuiz: true,
+      hasPrerequisiteQuiz: false,
       prerequisiteQuizPassed: false,
-      hasPreviousModule: true,
-      previousModuleCompleted: true,
-      previousModuleHasQuiz: true,
-      previousModuleQuizPassed: false,
       hasActiveSubscription: true,
     };
 
     assert.equal(isModuleUnlocked(state), false);
-    assert.equal(isModuleUnlocked({ ...state, previousModuleQuizPassed: true }), true);
+    assert.equal(isModuleUnlocked({ ...state, hasUnpassedPreviousQuiz: false }), true);
+  });
+
+  it('requires an explicitly assigned prerequisite quiz without requiring completion', () => {
+    const state: ModuleAccessState = {
+      hasUnpassedPreviousQuiz: false,
+      hasPrerequisiteQuiz: true,
+      prerequisiteQuizPassed: false,
+      hasActiveSubscription: true,
+    };
+
+    assert.equal(isModuleUnlocked(state), false);
+    assert.equal(isModuleUnlocked({ ...state, prerequisiteQuizPassed: true }), true);
   });
 });

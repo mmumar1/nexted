@@ -8,14 +8,9 @@ export function canAccessCourse(state: CourseAccessState): boolean {
 }
 
 export interface ModuleAccessState {
-  hasPrerequisite: boolean;
-  prerequisiteCompleted: boolean;
-  prerequisiteHasQuiz: boolean;
+  hasUnpassedPreviousQuiz: boolean;
+  hasPrerequisiteQuiz: boolean;
   prerequisiteQuizPassed: boolean;
-  hasPreviousModule?: boolean;
-  previousModuleCompleted?: boolean;
-  previousModuleHasQuiz?: boolean;
-  previousModuleQuizPassed?: boolean;
   hasActiveSubscription?: boolean;
   isModuleWithinFreeTier?: boolean;
 }
@@ -25,22 +20,6 @@ export function isModuleUnlocked(state: ModuleAccessState): boolean {
     return false;
   }
 
-  if (state.hasPreviousModule) {
-    if (!state.previousModuleCompleted) return false;
-    if (state.previousModuleHasQuiz && !state.previousModuleQuizPassed) return false;
-  }
-
-  if (!state.hasPrerequisite) {
-    return true;
-  }
-
-  if (!state.prerequisiteCompleted) {
-    return false;
-  }
-
-  if (state.prerequisiteHasQuiz && !state.prerequisiteQuizPassed) {
-    return false;
-  }
-
-  return true;
+  if (state.hasUnpassedPreviousQuiz) return false;
+  return !state.hasPrerequisiteQuiz || state.prerequisiteQuizPassed;
 }

@@ -94,8 +94,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const moduleIndex = orderedModules.findIndex((item) => item.id === module.id);
     if (moduleIndex < 0) return false;
 
-    const requirements = new Map<string, Module>();
-    if (moduleIndex > 0) requirements.set(orderedModules[moduleIndex - 1].id, orderedModules[moduleIndex - 1]);
+    const requirements = new Map<string, Module>(
+      orderedModules.slice(0, moduleIndex).map((previousModule) => [previousModule.id, previousModule]),
+    );
     if (module.prerequisiteModuleId) {
       const prerequisite = orderedModules.find((item) => item.id === module.prerequisiteModuleId)
         ?? await storage.getModule(module.prerequisiteModuleId);
@@ -106,10 +107,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const passedQuizModuleIds = await storage.getPassedQuizModuleIds(userId, module.courseId);
     for (const requirement of Array.from(requirements.values())) {
       const hasQuiz = !!(await storage.getQuizByModule(requirement.id));
-      const requirementSatisfied = hasQuiz
-        ? passedQuizModuleIds.has(requirement.id)
-        : await storage.isModuleCompleted(userId, requirement.id);
-      if (!requirementSatisfied) return false;
+      if (hasQuiz && !passedQuizModuleIds.has(requirement.id)) return false;
     }
 
     return true;

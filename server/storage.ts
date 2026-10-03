@@ -15,9 +15,9 @@ import {
   type InsertQuizAttempt,
   type Project,
   type InsertProject,
-} from "@shared/schema";
+} from "../shared/schema.js";
 import { randomUUID } from "crypto";
-import { SupabaseStorage } from "./supabase-storage";
+import { SupabaseStorage } from "./supabase-storage.js";
 
 export interface IStorage {
   // Users

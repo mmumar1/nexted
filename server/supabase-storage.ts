@@ -1,6 +1,6 @@
 import dotenv from "dotenv";
-import { createSupabaseAdminClient } from "./supabase-admin";
-import type { IStorage } from "./storage";
+import { createSupabaseAdminClient } from "./supabase-admin.js";
+import type { IStorage } from "./storage.js";
 import type {
   Course,
   InsertCourse,

@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { createHmac, randomBytes, timingSafeEqual } from "crypto";
-import { storage } from "./storage";
+import { storage } from "./storage.js";
 import {
   insertUserSchema,
   insertCourseSchema,
@@ -13,9 +13,9 @@ import {
   insertQuizAttemptSchema,
   insertProjectSchema,
   type QuizQuestion,
-} from "@shared/schema";
+} from "../shared/schema.js";
 import { z } from "zod";
-import { createSupabaseAdminClient, createSupabaseAuthClient } from "./supabase-admin";
+import { createSupabaseAdminClient, createSupabaseAuthClient } from "./supabase-admin.js";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Authentication routes

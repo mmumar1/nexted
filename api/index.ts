@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import dotenv from "dotenv";
-import { app } from "../server/app";
-import { registerRoutes } from "../server/routes";
+import { app } from "../server/app.js";
+import { registerRoutes } from "../server/routes.js";
 
 // Vercel provides environment variables in production; this keeps local invocation compatible.
 dotenv.config({ path: ".env.local" });

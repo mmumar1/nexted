@@ -10,16 +10,24 @@ interface ModuleContentProps {
   module: Module & { isCompleted: boolean; hasQuiz: boolean; isQuizPassed: boolean };
   previousModule?: Module;
   nextModule?: Module;
+  requiresSubscription?: boolean;
+  isStartingUpgrade?: boolean;
   onTakeQuiz: () => void;
   onSelectModule: (moduleId: string) => void;
+  onUpgrade: () => void;
+  onRedeemCoupon: () => void;
 }
 
 export function ModuleContent({
   module,
   previousModule,
   nextModule,
+  requiresSubscription = false,
+  isStartingUpgrade = false,
   onTakeQuiz,
   onSelectModule,
+  onUpgrade,
+  onRedeemCoupon,
 }: ModuleContentProps) {
   const embedUrl = normalizeYouTubeEmbedUrl(module.videoUrl);
   const canGoNext = !!nextModule;
@@ -67,6 +75,21 @@ export function ModuleContent({
             </Button>
           )}
         </div>
+
+        {requiresSubscription && (
+          <div className="mt-6 flex flex-col gap-3 rounded-md border border-primary/25 bg-primary/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="font-semibold text-foreground">Unlock the rest of this course</h3>
+              <p className="mt-1 text-sm text-muted-foreground">Upgrade to continue, or redeem a discount code.</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={onUpgrade} disabled={isStartingUpgrade}>
+                {isStartingUpgrade ? "Opening checkout..." : "Upgrade with Paystack"}
+              </Button>
+              <Button variant="outline" onClick={onRedeemCoupon}>Redeem coupon</Button>
+            </div>
+          </div>
+        )}
       </div>
 
       <footer className="flex items-center justify-between gap-3 border-t px-5 py-4 sm:px-7">

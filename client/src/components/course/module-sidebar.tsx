@@ -10,6 +10,7 @@ import type { Module } from "@shared/schema";
 export interface CourseModuleItem extends Module {
   isCompleted: boolean;
   isLocked: boolean;
+  requiresSubscription: boolean;
   hasQuiz: boolean;
   isQuizPassed: boolean;
 }

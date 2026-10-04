@@ -7,7 +7,6 @@ interface AuthContextType {
   user: User | null;
   login: (user: User) => void;
   logout: () => void;
-  activateSubscription: () => void;
   isAuthenticated: boolean;
 }
 
@@ -69,25 +68,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(normalizeUser(user));
   };
 
-  const activateSubscription = () => {
-    if (!user) return;
-    const updatedUser = normalizeUser({
-      ...user,
-      hasActiveSubscription: true,
-      subscriptionTier: "one-time",
-      subscriptionPaidAt: new Date(),
-    });
-    setUser(updatedUser);
-    void supabase
-      .from("profiles")
-      .update({
-        has_active_subscription: true,
-        subscription_tier: "one-time",
-        subscription_paid_at: updatedUser.subscriptionPaidAt?.toISOString(),
-      })
-      .eq("id", user.id);
-  };
-
   const logout = () => {
     void supabase.auth.signOut();
   };
@@ -104,7 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, activateSubscription, isAuthenticated: !!user }}>
+    <AuthContext.Provider value={{ user, login, logout, isAuthenticated: !!user }}>
       {children}
     </AuthContext.Provider>
   );

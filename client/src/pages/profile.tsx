@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useLocation } from "wouter";
 import { useMutation } from "@tanstack/react-query";
@@ -12,6 +12,7 @@ import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/lib/supabase";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { mapSupabaseProfileToUser } from "@/lib/auth-utils";
 
 interface ProfileForm { fullName: string; email: string }
 
@@ -19,6 +20,7 @@ export default function Profile() {
   const [, setLocation] = useLocation();
   const { user, login, isAuthenticated } = useAuth();
   const { toast } = useToast();
+  const [couponCode, setCouponCode] = useState("");
   const { register, handleSubmit, formState: { errors } } = useForm<ProfileForm>({
     values: { fullName: user?.fullName || "", email: user?.email || "" },
   });
@@ -53,6 +55,16 @@ export default function Profile() {
       window.location.assign(result.authorizationUrl);
     },
     onError: (error: Error) => toast({ title: "Payment could not start", description: error.message, variant: "destructive" }),
+  });
+
+  const redeemCouponMutation = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/payments/coupons/redeem", { code: couponCode }),
+    onSuccess: (result: { profile: Parameters<typeof mapSupabaseProfileToUser>[0] }) => {
+      login(mapSupabaseProfileToUser(result.profile));
+      setCouponCode("");
+      toast({ title: "Coupon redeemed", description: "Your subscription is active and published courses are unlocked." });
+    },
+    onError: (error: Error) => toast({ title: "Coupon could not be redeemed", description: error.message, variant: "destructive" }),
   });
 
   if (!user) return null;
@@ -101,9 +113,18 @@ export default function Profile() {
                 </Badge>
               </div>
               {!user.hasActiveSubscription && (
-                <Button type="button" variant="secondary" className="w-full" onClick={() => paymentMutation.mutate()} disabled={paymentMutation.isPending}>
-                  {paymentMutation.isPending ? "Opening Paystack..." : "Pay with Paystack"}
-                </Button>
+                <>
+                  <Button type="button" variant="secondary" className="w-full" onClick={() => paymentMutation.mutate()} disabled={paymentMutation.isPending}>
+                    {paymentMutation.isPending ? "Opening Paystack..." : "Pay with Paystack"}
+                  </Button>
+                  <form className="space-y-2 border-t pt-4" onSubmit={(event) => { event.preventDefault(); redeemCouponMutation.mutate(); }}>
+                    <Label htmlFor="subscription-coupon">Discount code</Label>
+                    <Input id="subscription-coupon" value={couponCode} onChange={(event) => setCouponCode(event.target.value)} placeholder="Enter coupon code" autoCapitalize="characters" />
+                    <Button type="submit" variant="outline" className="w-full" disabled={!couponCode.trim() || redeemCouponMutation.isPending}>
+                      {redeemCouponMutation.isPending ? "Applying code..." : "Redeem coupon"}
+                    </Button>
+                  </form>
+                </>
               )}
               <div className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
                 One-time payment unlocks published courses after Paystack confirms the transaction.

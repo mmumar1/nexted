@@ -330,12 +330,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   const getPaystackConfig = () => {
     const secretKey = process.env.PAYSTACK_SECRET_KEY;
-    const amount = Number(process.env.PAYSTACK_PLAN_AMOUNT || "100000");
-    const callbackUrl = process.env.PAYSTACK_CALLBACK_URL || "http://localhost:5000/profile";
+    const amount = Number(process.env.PAYSTACK_PLAN_AMOUNT || "200000");
+    const isProduction = process.env.NODE_ENV === "production";
+    const callbackUrl = process.env.PAYSTACK_CALLBACK_URL || (isProduction ? "" : "http://localhost:5000/profile");
     if (!secretKey || secretKey.includes("replace_with")) {
       throw new Error("Paystack server configuration is missing");
     }
     if (!Number.isInteger(amount) || amount <= 0) throw new Error("PAYSTACK_PLAN_AMOUNT must be a positive integer in kobo");
+    if (!callbackUrl || (isProduction && new URL(callbackUrl).protocol !== "https:")) {
+      throw new Error("PAYSTACK_CALLBACK_URL must be an HTTPS URL in production");
+    }
     return { secretKey, amount, callbackUrl };
   };
 
@@ -366,11 +370,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const existing = new Set((currentAccess ?? []).map((item) => item.course_id));
       const missing = (courses ?? []).filter((course) => !existing.has(course.id));
       if (missing.length) {
-        const { error } = await client.from("user_courses").insert(missing.map((course) => ({
+        const { error } = await client.from("user_courses").upsert(missing.map((course) => ({
           user_id: userId,
           course_id: course.id,
           access_source: "subscription",
-        })));
+        })), { onConflict: "user_id,course_id", ignoreDuplicates: true });
         if (error) throw new Error(error.message);
       }
     } else {
@@ -386,6 +390,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const user = await verifyAccessToken(req);
       if (!user) return res.status(401).json({ error: "Valid Supabase session required" });
       const { secretKey, amount, callbackUrl } = getPaystackConfig();
+      const adminClient = createSupabaseAdminClient();
+      const { data: profile, error: profileError } = await adminClient.from("profiles").select("has_active_subscription").eq("id", user.id).single();
+      if (profileError || !profile) return res.status(500).json({ error: "Unable to verify subscription status" });
+      if (profile.has_active_subscription) return res.status(409).json({ error: "A subscription is already active" });
       const reference = `learnpedia_${randomBytes(12).toString("hex")}`;
       const paystackResponse = await fetch("https://api.paystack.co/transaction/initialize", {
         method: "POST",
@@ -395,7 +403,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const result = await paystackResponse.json() as { status?: boolean; message?: string; data?: { authorization_url: string; access_code: string; reference: string } };
       if (!paystackResponse.ok || !result.status || !result.data) return res.status(502).json({ error: result.message || "Paystack initialization failed" });
 
-      const { error } = await createSupabaseAdminClient().from("payments").insert({
+      const { error } = await adminClient.from("payments").insert({
         user_id: user.id,
         provider: "paystack",
         provider_ref: result.data.reference,
@@ -412,6 +420,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/payments/coupons/redeem", async (req, res) => {
+    try {
+      const user = await verifyAccessToken(req);
+      if (!user) return res.status(401).json({ error: "Valid Supabase session required" });
+      const { code } = z.object({ code: z.string().trim().min(1).max(80) }).parse(req.body);
+      const client = createSupabaseAdminClient();
+      const { error: redemptionError } = await client.rpc("redeem_free_subscription_coupon", {
+        p_user_id: user.id,
+        p_code: code.toUpperCase(),
+      });
+      if (redemptionError) {
+        const status = redemptionError.code === "P0001" ? 400 : 500;
+        return res.status(status).json({ error: status === 400 ? redemptionError.message : "Coupon redemption failed" });
+      }
+
+      const { data: profile, error: profileError } = await client.from("profiles").select("*").eq("id", user.id).single();
+      if (profileError || !profile) return res.status(500).json({ error: "Coupon redeemed, but profile refresh failed" });
+      res.json({ profile });
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
+      res.status(500).json({ error: "Coupon redemption failed" });
+    }
+  });
+
   app.post("/api/payments/paystack/webhook", async (req, res) => {
     try {
       const { secretKey } = getPaystackConfig();
@@ -422,7 +454,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "Invalid Paystack signature" });
       }
 
-      const event = req.body as { event?: string; data?: { reference?: string; amount?: number; status?: string } };
+      const event = req.body as { event?: string; data?: { reference?: string; amount?: number; currency?: string; status?: string } };
       const reference = event.data?.reference;
       if (!reference) return res.status(400).json({ error: "Payment reference missing" });
       const client = createSupabaseAdminClient();
@@ -435,8 +467,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (event.event === "charge.failed") nextStatus = "failed";
       if (event.event === "refund.processed") nextStatus = "refunded";
       if (!nextStatus) return res.json({ received: true });
-      if (nextStatus === "success" && event.data?.amount !== undefined && event.data.amount !== Number(payment.amount) * 100) {
-        return res.status(400).json({ error: "Payment amount mismatch" });
+      if (payment.status === nextStatus || (payment.status === "success" && nextStatus === "failed") || (payment.status === "refunded" && nextStatus !== "refunded")) {
+        return res.json({ received: true });
+      }
+      if (nextStatus === "success") {
+        if (event.data?.status !== "success") return res.status(400).json({ error: "Paystack transaction is not successful" });
+        if (event.data.amount !== Number(payment.amount) * 100) return res.status(400).json({ error: "Payment amount mismatch" });
+        if (event.data.currency !== payment.currency) return res.status(400).json({ error: "Payment currency mismatch" });
       }
 
       const { error: updateError } = await client.from("payments").update({ status: nextStatus, metadata: { ...(payment.metadata || {}), webhook_event: event.event } }).eq("id", payment.id);

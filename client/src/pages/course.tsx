@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useRoute, useLocation } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Navbar } from "@/components/navbar";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
@@ -14,12 +14,15 @@ import { ModuleContent } from "@/components/course/module-content";
 import { ModuleSidebar, type CourseModuleItem } from "@/components/course/module-sidebar";
 import { isModuleUnlocked } from "@/lib/access-rules";
 import { compareModuleOrder } from "@/lib/module-utils";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 export default function CoursePage() {
   const [, legacyParams] = useRoute("/course/:id");
   const [, moduleParams] = useRoute("/course/:courseId/module/:moduleId");
   const [, setLocation] = useLocation();
   const { user, isAuthenticated } = useAuth();
+  const { toast } = useToast();
   const courseId = moduleParams?.courseId || legacyParams?.id || "1";
   const requestedModuleId = moduleParams?.moduleId;
 
@@ -54,6 +57,12 @@ export default function CoursePage() {
     enabled: !!user?.id,
   });
 
+  const startUpgrade = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/payments/paystack/initialize"),
+    onSuccess: (result: { authorizationUrl: string }) => window.location.assign(result.authorizationUrl),
+    onError: (error: Error) => toast({ title: "Checkout could not start", description: error.message, variant: "destructive" }),
+  });
+
   if (!user) return null;
 
   const hasActiveSubscription = !!user.hasActiveSubscription;
@@ -70,6 +79,7 @@ export default function CoursePage() {
       ...m,
       isCompleted: completedModuleIds.has(m.id) || (m.hasQuiz && passedQuizModuleIds.has(m.id)),
       isLocked: false,
+      requiresSubscription: false,
       hasQuiz: m.hasQuiz,
       isQuizPassed: passedQuizModuleIds.has(m.id),
     })) || [];
@@ -81,6 +91,10 @@ export default function CoursePage() {
     const hasUnpassedPreviousQuiz = baseModulesWithCompletion
       .slice(0, index)
       .some((previousModule) => previousModule.hasQuiz && !previousModule.isQuizPassed);
+    const requiresSubscription = !hasActiveSubscription
+      && module.order > 2
+      && !hasUnpassedPreviousQuiz
+      && (!module.prerequisiteModuleId || !!prerequisiteModule?.isQuizPassed);
     const isLocked = !isModuleUnlocked({
       hasUnpassedPreviousQuiz,
       hasPrerequisiteQuiz: !!prerequisiteModule?.hasQuiz,
@@ -92,6 +106,7 @@ export default function CoursePage() {
     return {
       ...module,
       isLocked,
+      requiresSubscription,
     };
   });
 
@@ -218,8 +233,12 @@ export default function CoursePage() {
               module={activeModule}
               previousModule={previousModule}
               nextModule={nextModule}
+              requiresSubscription={!!nextModuleCandidate?.requiresSubscription}
+              isStartingUpgrade={startUpgrade.isPending}
               onTakeQuiz={() => handleTakeQuiz(activeModule.id)}
               onSelectModule={handleSelectModule}
+              onUpgrade={() => startUpgrade.mutate()}
+              onRedeemCoupon={() => setLocation("/profile?upgrade=1")}
             />
           </div>
         ) : (

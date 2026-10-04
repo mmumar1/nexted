@@ -13,29 +13,34 @@ Implemented:
 - Subscription activation after `charge.success`
 - Subscription-owned course access
 - Subscription access removal after failed or refunded payments
+- Upgrade CTA when a learner reaches a subscription-locked module
+- Server-side redemption of 100% coupons, with per-account and usage-limit checks
 
 Still to implement:
 
 - Manual bank-transfer submission and admin approval UI
-- Coupon-code validation and discount calculation
-- Payment checkout UI that combines Paystack, bank transfer, and coupon entry
+- Admin UI for creating and managing coupons
+- Partial-discount coupons and applying discounts to Paystack checkout
+- Combined checkout UI for Paystack and bank transfer
 
 ## Environment variables
 
-Keep these variables on the server. Only variables with the `VITE_` prefix are exposed to the browser.
+Configure these variables in the Vercel project's **Production** environment. Redeploy after changing them. `VITE_` values are included in the client build; the service-role key and Paystack key are server-only.
 
 ```env
 VITE_SUPABASE_URL=https://your-project-id.supabase.co
 VITE_SUPABASE_ANON_KEY=your-anon-public-key
 SUPABASE_SERVICE_ROLE_KEY=your-server-only-service-role-key
 PAYSTACK_SECRET_KEY=sk_test_your-paystack-test-secret
-PAYSTACK_PLAN_AMOUNT=100000
-PAYSTACK_CALLBACK_URL=http://localhost:5000/profile
+PAYSTACK_PLAN_AMOUNT=200000
+PAYSTACK_CALLBACK_URL=https://your-production-domain.example/profile
 ```
 
-`PAYSTACK_PLAN_AMOUNT` is expressed in kobo. `100000` means NGN 1,000.
+`PAYSTACK_PLAN_AMOUNT` is expressed in kobo. `200000` means NGN 2,000.
 
 Never place `SUPABASE_SERVICE_ROLE_KEY` or `PAYSTACK_SECRET_KEY` in a `VITE_` variable.
+
+Use a real Paystack test secret for testing, then replace it with the live secret when enabling production payments. Set `PAYSTACK_CALLBACK_URL` to the deployed Profile URL. This redirect only returns the learner to the app; it does not prove payment. The webhook is the authority that activates access.
 
 ## Database migration
 
@@ -54,25 +59,26 @@ For an existing project, run only:
 payment-migration.sql
 ```
 
-The following schema extends the current payment model for manual transfers and coupons:
+The payment migration also creates `coupons` and `coupon_redemptions`, the atomic 100%-coupon redemption function, and a profile trigger that prevents browser clients from changing role or subscription fields. Apply it before enabling coupon redemption or relying on server-only subscription activation.
+
+The migration seeds `LEARNPEDIA100` as a 100% coupon with no global use cap or expiry. Each account can redeem it once. To impose a global cap or expiration, update the coupon row in Supabase.
+
+To create a separate limited code, for example with 100 redemptions and a 60-day expiry:
+
+```sql
+insert into public.coupons (code, discount_percent, max_uses, expires_at)
+values ('FOUNDING100', 100, 100, now() + interval '60 days');
+```
+
+Set `max_uses` to `null` for no global usage cap. Each account can still redeem a given code only once. A 100% coupon is redeemed on the server, activates the subscription, and grants access without creating a Paystack charge.
+
+The following schema is a design reference for the **future manual bank-transfer feature**. Coupon tables are already created by `payment-migration.sql`; do not run a second, differently shaped coupons table definition.
 
 ```sql
 create type public.manual_payment_status as enum (
   'pending',
   'approved',
   'rejected'
-);
-
-create table public.coupons (
-  id uuid primary key default gen_random_uuid(),
-  code text not null unique,
-  discount_type text not null check (discount_type in ('fixed', 'percentage')),
-  discount_value numeric(10,2) not null check (discount_value > 0),
-  max_uses integer,
-  used_count integer not null default 0,
-  expires_at timestamptz,
-  is_active boolean not null default true,
-  created_at timestamptz not null default now()
 );
 
 create table public.manual_payment_submissions (
@@ -97,39 +103,16 @@ create index idx_manual_payment_status
   on public.manual_payment_submissions(status);
 ```
 
-Example coupon:
-
-```sql
-insert into public.coupons (
-  code,
-  discount_type,
-  discount_value,
-  max_uses,
-  expires_at
-) values (
-  'WELCOME20',
-  'percentage',
-  20,
-  100,
-  now() + interval '30 days'
-);
-```
-
 ## Paystack checkout flow
 
-1. The learner opens the payment UI.
-2. The learner enters an optional coupon code.
-3. The browser sends the coupon code to the server.
-4. The server validates the coupon and calculates the final amount.
-5. The server creates a pending row in `payments`.
-6. The server initializes Paystack using `PAYSTACK_SECRET_KEY`.
-7. The browser redirects to the Paystack authorization URL.
-8. Paystack calls the webhook.
-9. The webhook validates `x-paystack-signature`.
-10. The server verifies the transaction amount and reference.
-11. A valid `charge.success` event changes the payment to `success`.
-12. The server sets `profiles.has_active_subscription = true`.
-13. The server grants published courses with `access_source = 'subscription'`.
+1. A learner at the paid-module boundary can choose **Upgrade with Paystack**, which redirects to hosted checkout.
+2. The server derives the amount from `PAYSTACK_PLAN_AMOUNT`, binds checkout to the signed-in Supabase user, and creates a pending `payments` row.
+3. Paystack calls `/api/payments/paystack/webhook` after the transaction.
+4. The webhook validates `x-paystack-signature`, reference, successful status, amount, and currency.
+5. A valid `charge.success` changes the payment status and activates the profile subscription.
+6. The server grants access to published courses with `access_source = 'subscription'`.
+
+Learners with a 100% coupon can redeem it from the Profile page instead. Coupon redemption does not redirect to Paystack or create a charge.
 
 The browser redirect is not proof of payment. Access must only be granted after server-side verification.
 
@@ -160,7 +143,7 @@ The webhook must:
 - Compare it with `x-paystack-signature` using a timing-safe comparison.
 - Find the existing payment by provider and reference.
 - Reject amount or currency mismatches.
-- Be idempotent when Paystack retries an event.
+- Ignore duplicate and stale failure events when the payment is already successful/refunded.
 - Activate access only for verified successful payments.
 
 ## Manual bank-transfer flow
@@ -209,52 +192,28 @@ On rejection, do not change the profile subscription or course access.
 
 ## Coupon flow
 
-Coupon validation must happen on the server. The browser may display a preview, but the server is authoritative.
+The current coupon implementation supports **100% subscription coupons only**. The server validates and redeems them atomically through `redeem_free_subscription_coupon`; the browser never sends an amount or marks a payment successful. A successful redemption activates the one-time subscription and grants access to published courses without contacting Paystack. Partial/fixed discounts and applying coupon discounts to Paystack checkout are not implemented yet.
 
-Recommended validation rules:
-
-- Normalize codes to uppercase.
-- Require `is_active = true`.
-- Reject expired coupons.
-- Reject coupons whose `max_uses` has been reached.
-- Apply percentage discounts with a maximum discount equal to the order amount.
-- Never allow a negative final amount.
-- Increment `used_count` only inside the successful payment approval transaction.
-- Store the coupon code and discount amount in `payments.metadata` or the manual submission record.
-
-Example calculation:
-
-```text
-base amount:       NGN 1,000
-WELCOME20:             20%
-discount:          NGN   200
-final amount:      NGN   800
-Paystack amount:   80,000 kobo
-```
+Create a code in Supabase using the example above. Choose `max_uses` to cap the first-user offer, or `null` for no global cap. The database also limits each account to one redemption of each code and enforces its optional expiry.
 
 ## Recommended API routes
 
 ```text
 POST /api/payments/paystack/initialize
 POST /api/payments/paystack/webhook
-POST /api/payments/coupons/validate
-POST /api/payments/manual
-GET  /api/admin/payments/manual
-POST /api/admin/payments/manual/:id/approve
-POST /api/admin/payments/manual/:id/reject
+POST /api/payments/coupons/redeem
 ```
+
+Manual-payment routes shown in the earlier design are not implemented yet.
 
 All admin payment routes must verify the Supabase access token and load the caller's role from `public.profiles`. Never trust a browser-supplied `userId`, role, amount, discount, or approval status.
 
 ## UI acceptance criteria
 
-- The learner can choose Paystack or bank transfer.
-- The learner can enter and validate a coupon before paying.
-- The final amount is visible before checkout.
+- The learner can start Paystack checkout at the paid-module gate or profile page.
+- The learner can redeem a 100% coupon for free access.
 - Paystack redirects to the hosted checkout.
-- Bank transfers show `Pending review` until approved.
 - A learner cannot unlock courses by editing browser storage.
-- Admins can approve or reject manual transfers.
 - Successful payment updates the subscription badge after refresh.
 - Failed, rejected, or refunded payments do not grant access.
 
@@ -266,8 +225,7 @@ All admin payment routes must verify the Supabase access token and load the call
 4. Confirm the payment becomes `success`.
 5. Confirm the profile subscription becomes active.
 6. Confirm published courses are inserted into `user_courses` with `access_source = 'subscription'`.
-7. Submit a manual transfer and confirm it remains pending.
-8. Approve it as an admin and confirm the same access changes.
-9. Reject another transfer and confirm no access is granted.
-10. Test valid, expired, inactive, exhausted, percentage, and fixed-value coupons.
-11. Replay the same webhook and confirm no duplicate payment or enrollment is created.
+7. Redeem a valid 100% coupon and confirm no Paystack payment is created.
+8. Confirm the same account cannot redeem that code twice.
+9. Confirm inactive, expired, exhausted, and already-subscribed cases are rejected.
+10. Replay the same webhook and confirm no duplicate payment or enrollment is created.

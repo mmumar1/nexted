@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { createHmac, randomBytes, timingSafeEqual } from "crypto";
 import { storage } from "./storage.js";
@@ -86,6 +86,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     return user;
   };
 
+  const requireAuthenticatedStaff = async (req: Request, res: Response) => {
+    const authorization = req.header("Authorization");
+    const accessToken = authorization?.startsWith("Bearer ")
+      ? authorization.slice("Bearer ".length)
+      : undefined;
+    if (!accessToken) {
+      res.status(401).json({ error: "Supabase access token required" });
+      return undefined;
+    }
+
+    const { data, error } = await createSupabaseAuthClient().auth.getUser(accessToken);
+    if (error || !data.user) {
+      res.status(401).json({ error: "Invalid Supabase session" });
+      return undefined;
+    }
+
+    const requester = await storage.getUser(data.user.id);
+    if (!requester || !["admin", "super_admin", "superadmin", "instructor"].includes(requester.role)) {
+      res.status(403).json({ error: "Instructor or administrator access required" });
+      return undefined;
+    }
+
+    return requester;
+  };
+
   const isSuperAdmin = (role?: string | null) => ["admin", "super_admin", "superadmin"].includes(role || "");
 
   const canAccessModule = async (userId: string, module: Module) => {
@@ -164,7 +189,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post("/api/admin/courses", async (req, res) => {
-    const requester = await requireAdmin(req.body.userId, res);
+    const requester = await requireAuthenticatedStaff(req, res);
     if (!requester) return;
     try {
       const data = insertCourseSchema.parse({ ...req.body.course, accessCode: req.body.course?.accessCode || "" });

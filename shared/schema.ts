@@ -97,6 +97,8 @@ export const quizQuestionSchema = z.object({
   question: z.string(),
   options: z.array(z.string()),
   correctAnswer: z.number(),
+  correctAnswerBase: z.literal(1).optional(),
+  explanation: z.string().optional(),
 });
 
 export type QuizQuestion = z.infer<typeof quizQuestionSchema>;

@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { normalizeYouTubeEmbedUrl } from "@/lib/video";
 import { getModuleDisplayLabel } from "@/lib/module-utils";
+import { QuizMarkdownContent } from "@/components/quiz/quiz-markdown";
 import type { Module } from "@shared/schema";
 
 interface ModuleContentProps {
@@ -37,10 +38,7 @@ export function ModuleContent({
       </div>
 
       <div className="px-5 py-6 sm:px-7">
-        <div
-          className="prose prose-sm max-w-none text-foreground"
-          dangerouslySetInnerHTML={{ __html: module.content }}
-        />
+        <QuizMarkdownContent source={module.content} />
 
         {module.imageUrl && (
           <img src={module.imageUrl} alt="" className="mt-6 max-h-80 w-full rounded-md object-cover" />

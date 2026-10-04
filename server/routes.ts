@@ -18,6 +18,16 @@ import {
 import { z } from "zod";
 import { createSupabaseAdminClient, createSupabaseAuthClient } from "./supabase-admin.js";
 import { compareModuleOrder } from "../shared/module-utils.js";
+import { normalizeQuizQuestionIndex } from "../shared/quiz-utils.js";
+
+const quizQuestionInputSchema = z.object({
+  id: z.string(),
+  question: z.string().min(1),
+  explanation: z.string().optional(),
+  options: z.array(z.string().min(1)).length(4),
+  correctAnswer: z.number().int().min(1).max(4),
+  correctAnswerBase: z.literal(1),
+});
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Authentication routes
@@ -576,14 +586,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/admin/quizzes", async (req, res) => {
     if (!(await requireAdmin(req.query.userId, res))) return;
     const quizzes = await storage.getAllQuizzes();
-    res.json(quizzes.map((quiz) => ({ ...quiz, questions: JSON.parse(quiz.questions) })));
+    res.json(quizzes.map((quiz) => ({
+      ...quiz,
+      questions: (JSON.parse(quiz.questions) as QuizQuestion[]).map(normalizeQuizQuestionIndex),
+    })));
   });
 
   app.post("/api/admin/quizzes", async (req, res) => {
     const requester = await requireAdmin(req.body.userId, res);
     if (!requester) return;
     try {
-      const input = z.object({ moduleId: z.string(), title: z.string().min(1), passScore: z.number().min(1).max(100), questions: z.array(z.object({ id: z.string(), question: z.string().min(1), options: z.array(z.string()).min(2), correctAnswer: z.number().int().min(0) })) }).parse(req.body.quiz);
+      const input = z.object({ moduleId: z.string(), title: z.string().min(1), passScore: z.number().min(1).max(100), questions: z.array(quizQuestionInputSchema).min(1) }).parse(req.body.quiz);
       const module = await storage.getModule(input.moduleId);
       if (!module) return res.status(404).json({ error: "Module not found" });
       const course = await storage.getCourse(module.courseId);
@@ -591,8 +604,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!isSuperAdmin(requester.role) && course.instructorId !== requester.id) {
         return res.status(403).json({ error: "You can only add quizzes to your assigned courses" });
       }
-      const quiz = await storage.createQuiz({ ...input, questions: JSON.stringify(input.questions) });
-      res.json({ ...quiz, questions: input.questions });
+      const questions = input.questions.map(normalizeQuizQuestionIndex);
+      const quiz = await storage.createQuiz({ ...input, questions: JSON.stringify(questions) });
+      res.json({ ...quiz, questions });
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
       res.status(500).json({ error: "Failed to create quiz" });
@@ -601,10 +615,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/admin/quizzes/:id", async (req, res) => {
     if (!(await requireAdmin(req.body.userId, res))) return;
-    const input = z.object({ moduleId: z.string().optional(), title: z.string().min(1).optional(), passScore: z.number().min(1).max(100).optional(), questions: z.array(z.object({ id: z.string(), question: z.string().min(1), options: z.array(z.string()).min(2), correctAnswer: z.number().int().min(0) })).optional() }).parse(req.body.quiz || {});
-    const quiz = await storage.updateQuiz(req.params.id, { ...input, questions: input.questions ? JSON.stringify(input.questions) : undefined });
+    const input = z.object({ moduleId: z.string().optional(), title: z.string().min(1).optional(), passScore: z.number().min(1).max(100).optional(), questions: z.array(quizQuestionInputSchema).min(1).optional() }).parse(req.body.quiz || {});
+    const questions = input.questions?.map(normalizeQuizQuestionIndex);
+    const quiz = await storage.updateQuiz(req.params.id, { ...input, questions: questions ? JSON.stringify(questions) : undefined });
     if (!quiz) return res.status(404).json({ error: "Quiz not found" });
-    res.json({ ...quiz, questions: JSON.parse(quiz.questions) });
+    res.json({ ...quiz, questions: questions ?? (JSON.parse(quiz.questions) as QuizQuestion[]).map(normalizeQuizQuestionIndex) });
   });
 
   app.delete("/api/admin/quizzes/:id", async (req, res) => {
@@ -732,7 +747,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Parse questions and send them
-      const questions = JSON.parse(quiz.questions) as QuizQuestion[];
+      const questions = (JSON.parse(quiz.questions) as QuizQuestion[]).map(normalizeQuizQuestionIndex);
       res.json({
         id: quiz.id,
         moduleId: quiz.moduleId,
@@ -752,7 +767,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Quiz not found" });
       }
       
-      const questions = JSON.parse(quiz.questions) as QuizQuestion[];
+      const questions = (JSON.parse(quiz.questions) as QuizQuestion[]).map(normalizeQuizQuestionIndex);
       res.json({
         id: quiz.id,
         moduleId: quiz.moduleId,

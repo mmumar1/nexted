@@ -13,6 +13,7 @@ import { useAuth } from "@/lib/auth-context";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
+import { QuizMarkdownEditor } from "@/components/quiz/quiz-markdown";
 import type { AnnouncementRecord } from "@/lib/announcements";
 import type { Course, Module, User } from "@shared/schema";
 import { BarChart3, BookOpen, FileQuestion, LayoutDashboard, Plus, Settings2, Trash2, UserRound, Users } from "lucide-react";
@@ -61,7 +62,7 @@ export default function AdminCms() {
   const [newCourseDraft, setNewCourseDraft] = useState({ title: "", description: "", enrollmentMode: "self", instructorId: "", thumbnail: "", isPublished: false });
   const [moduleDraft, setModuleDraft] = useState({ title: "", order: "1", content: "", duration: "30", parentModuleId: "", prerequisiteModuleId: "", videoUrl: "", imageUrl: "" });
   const [editingModuleId, setEditingModuleId] = useState<string | null>(null);
-  const [quizDraft, setQuizDraft] = useState({ moduleId: "", title: "", passScore: "70", question: "", options: ["", ""], correctAnswer: "0" });
+  const [quizDraft, setQuizDraft] = useState({ moduleId: "", title: "", passScore: "70", question: "", explanation: "", options: ["", "", "", ""], correctAnswer: "1" });
   const [enrollment, setEnrollment] = useState({ userId: "", courseId: "" });
   const [instructorDraft, setInstructorDraft] = useState({ fullName: "", email: "", password: "" });
   const [createdInstructor, setCreatedInstructor] = useState<{ fullName: string; email: string; temporaryPassword: string } | null>(null);
@@ -188,7 +189,7 @@ export default function AdminCms() {
       });
       setModuleDraft({ title: "", order: "1", content: "", duration: "30", parentModuleId: "", prerequisiteModuleId: "", videoUrl: "", imageUrl: "" });
       setEditingModuleId(null);
-      setQuizDraft({ moduleId: "", title: "", passScore: "70", question: "", options: ["", ""], correctAnswer: "0" });
+      setQuizDraft({ moduleId: "", title: "", passScore: "70", question: "", explanation: "", options: ["", "", "", ""], correctAnswer: "1" });
       setNewCourseDraft({ title: "", description: "", enrollmentMode: "self", instructorId: user?.id || "", thumbnail: "", isPublished: false });
       setSection("modules");
       toast({ title: "Course created", description: "Add modules and publish it when your content is ready." });
@@ -229,14 +230,16 @@ export default function AdminCms() {
         questions: [{
           id: crypto.randomUUID(),
           question: quizDraft.question,
+          explanation: quizDraft.explanation,
           options: quizDraft.options,
           correctAnswer: Number(quizDraft.correctAnswer),
+          correctAnswerBase: 1,
         }],
       },
     }),
     onSuccess: () => {
       invalidate(["/api/admin/quizzes", adminId]);
-      setQuizDraft({ moduleId: "", title: "", passScore: "70", question: "", options: ["", ""], correctAnswer: "0" });
+      setQuizDraft({ moduleId: "", title: "", passScore: "70", question: "", explanation: "", options: ["", "", "", ""], correctAnswer: "1" });
       toast({ title: "Quiz created" });
     },
     onError: (error: Error) => toast({ title: "Could not create quiz", description: error.message, variant: "destructive" }),
@@ -660,7 +663,7 @@ function ModulePanel({ courses, selectedCourseId, chooseCourse, modules, draft, 
           </div>
 
           <Field label="Content">
-            <textarea className="min-h-36 w-full rounded-md border bg-background px-3 py-2 text-sm" value={draft.content} onChange={(e) => setDraft({ ...draft, content: e.target.value })} />
+            <QuizMarkdownEditor value={draft.content} onChange={(content) => setDraft({ ...draft, content })} placeholder="Write the lesson. Paste lists or LaTeX equations here." minHeight="min-h-56" />
           </Field>
 
           <div className="grid gap-4 md:grid-cols-2">
@@ -808,7 +811,11 @@ function QuizPanel({ courses, selectedCourseId, chooseCourse, modules, quizzes, 
           </Field>
 
           <Field label="Question">
-            <Input value={draft.question} onChange={(e) => setDraft({ ...draft, question: e.target.value })} />
+            <QuizMarkdownEditor value={draft.question} onChange={(question) => setDraft({ ...draft, question })} placeholder="Write the question. Paste lists or LaTeX equations here." />
+          </Field>
+
+          <Field label="Explanation (optional)">
+            <QuizMarkdownEditor value={draft.explanation} onChange={(explanation) => setDraft({ ...draft, explanation })} placeholder="Explain why the answer is correct." />
           </Field>
 
           <div className="grid gap-3 md:grid-cols-2">
@@ -826,11 +833,13 @@ function QuizPanel({ courses, selectedCourseId, chooseCourse, modules, quizzes, 
             ))}
           </div>
 
-          <Field label="Correct option index">
-            <Input type="number" min="0" max="1" value={draft.correctAnswer} onChange={(e) => setDraft({ ...draft, correctAnswer: e.target.value })} />
+          <Field label="Correct option">
+            <select className="h-10 w-full rounded-md border bg-background px-3 text-sm text-foreground" value={draft.correctAnswer} onChange={(event) => setDraft({ ...draft, correctAnswer: event.target.value })}>
+              {[1, 2, 3, 4].map((optionNumber) => <option key={optionNumber} value={optionNumber}>Option {optionNumber}</option>)}
+            </select>
           </Field>
 
-          <Button disabled={pending || !selectedCourseId || !draft.moduleId || !draft.title.trim() || !draft.question.trim()} onClick={onSave}>
+          <Button disabled={pending || !selectedCourseId || !draft.moduleId || !draft.title.trim() || !draft.question.trim() || draft.options.some((option: string) => !option.trim())} onClick={onSave}>
             <Plus className="mr-2 h-4 w-4" />Create quiz
           </Button>
         </CardContent>

@@ -13,6 +13,7 @@ import { Link } from "wouter";
 import { useAuth } from "@/lib/auth-context";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { compareModuleOrder } from "@/lib/module-utils";
+import { QuizMarkdownContent } from "@/components/quiz/quiz-markdown";
 import type { Module, QuizQuestion } from "@shared/schema";
 
 interface QuizData {
@@ -214,35 +215,31 @@ export default function Quiz() {
         {/* Question Card */}
         <Card className="border-card-border mb-6">
           <CardHeader>
-            <CardTitle className="text-xl leading-relaxed">
-              {currentQ.question}
-            </CardTitle>
+            <QuizMarkdownContent source={currentQ.question} className="text-xl leading-relaxed" />
           </CardHeader>
           <CardContent>
             <RadioGroup
               value={selectedAnswer?.toString()}
-              onValueChange={(value) =>
-                handleAnswerSelect(currentQ.id, parseInt(value))
-              }
+              onValueChange={(value) => handleAnswerSelect(currentQ.id, Number(value))}
             >
               <div className="space-y-3">
                 {currentQ.options.map((option, index) => (
                   <div
                     key={index}
                     className={`flex items-center space-x-3 p-4 rounded-md border transition-all hover-elevate cursor-pointer ${
-                      selectedAnswer === index
+                      selectedAnswer === index + 1
                         ? "border-primary bg-primary/5"
                         : "border-card-border"
                     }`}
-                    onClick={() => handleAnswerSelect(currentQ.id, index)}
+                    onClick={() => handleAnswerSelect(currentQ.id, index + 1)}
                   >
                     <RadioGroupItem
-                      value={index.toString()}
-                      id={`option-${index}`}
-                      data-testid={`radio-option-${index}`}
+                      value={(index + 1).toString()}
+                      id={`option-${index + 1}`}
+                      data-testid={`radio-option-${index + 1}`}
                     />
                     <Label
-                      htmlFor={`option-${index}`}
+                      htmlFor={`option-${index + 1}`}
                       className="flex-1 cursor-pointer text-base leading-relaxed"
                     >
                       {option}
@@ -254,7 +251,6 @@ export default function Quiz() {
           </CardContent>
         </Card>
 
-        {/* Navigation */}
         <div className="flex items-center justify-between gap-4">
           <Button
             variant="secondary"
@@ -264,13 +260,10 @@ export default function Quiz() {
           >
             Previous
           </Button>
-
           <div className="flex gap-2">
             {currentQuestion < totalQuestions - 1 ? (
               <Button
-                onClick={() =>
-                  setCurrentQuestion(Math.min(totalQuestions - 1, currentQuestion + 1))
-                }
+                onClick={() => setCurrentQuestion(Math.min(totalQuestions - 1, currentQuestion + 1))}
                 data-testid="button-next"
               >
                 Next
@@ -325,6 +318,17 @@ export default function Quiz() {
               </p>
             </div>
           </div>
+
+          {quiz.questions.some((question) => question.explanation?.trim()) && (
+            <div className="max-h-64 space-y-4 overflow-y-auto border-t pt-4">
+              {quiz.questions.map((question, index) => question.explanation?.trim() ? (
+                <section key={question.id} className="space-y-2">
+                  <h3 className="text-sm font-semibold">Explanation {quiz.questions.length > 1 ? index + 1 : ""}</h3>
+                  <QuizMarkdownContent source={question.explanation} />
+                </section>
+              ) : null)}
+            </div>
+          )}
 
           <DialogFooter className="flex-col sm:flex-row gap-2">
             <Button

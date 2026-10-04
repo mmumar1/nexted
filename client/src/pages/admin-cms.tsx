@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useLocation } from "wouter";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -67,6 +67,7 @@ export default function AdminCms() {
   const [instructorDraft, setInstructorDraft] = useState({ fullName: "", email: "", password: "" });
   const [createdInstructor, setCreatedInstructor] = useState<{ fullName: string; email: string; temporaryPassword: string } | null>(null);
   const [announcementDraft, setAnnouncementDraft] = useState({ title: "", message: "" });
+  const courseEditorRef = useRef<HTMLDivElement>(null);
 
   const canManage = !!user && isStaffRole(user.role);
   const adminId = user?.id || "";
@@ -74,6 +75,12 @@ export default function AdminCms() {
   useEffect(() => {
     if (!isAuthenticated) setLocation("/login");
   }, [isAuthenticated, setLocation]);
+
+  useEffect(() => {
+    if (section === "courses" && selectedCourseId) {
+      courseEditorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [section, selectedCourseId]);
 
   const announcementFeed = useQuery<AnnouncementRecord[]>({ queryKey: ["/api/announcements"] });
 
@@ -323,6 +330,9 @@ export default function AdminCms() {
 
   const chooseCourse = (id: string) => {
     setSelectedCourseId(id);
+    setEditingModuleId(null);
+    setModuleDraft({ title: "", order: "1", content: "", duration: "30", parentModuleId: "", prerequisiteModuleId: "", videoUrl: "", imageUrl: "" });
+    setQuizDraft((draft) => ({ ...draft, moduleId: "" }));
     const course = courses.data?.find((item) => item.id === id);
     if (course) {
       setCourseDraft({
@@ -473,7 +483,7 @@ export default function AdminCms() {
               </Card>
 
               {selectedCourse && (
-                <Card>
+                <Card ref={courseEditorRef}>
                   <CardHeader>
                     <CardTitle>Edit course</CardTitle>
                     <CardDescription>Update the course details and publish it once it is ready for students.</CardDescription>
@@ -532,7 +542,7 @@ export default function AdminCms() {
               courses={visibleCourseOptions}
               selectedCourseId={selectedCourseId}
               chooseCourse={chooseCourse}
-              modules={modules.data || []}
+              modules={modules.data?.filter((module) => module.courseId === selectedCourseId) || []}
               draft={moduleDraft}
               setDraft={setModuleDraft}
               editingModuleId={editingModuleId}
@@ -640,8 +650,9 @@ function Overview({ courses, users, onSection }: { analytics?: Analytics; course
 }
 
 function ModulePanel({ courses, selectedCourseId, chooseCourse, modules, draft, setDraft, editingModuleId, setEditingModuleId, onSave, pending }: any) {
-  const topLevelModules = modules.filter((module: Module) => !module.parentModuleId);
-  const childModules = (parentId: string) => modules.filter((module: Module) => module.parentModuleId === parentId);
+  const courseModules = modules.filter((module: Module) => module.courseId === selectedCourseId);
+  const topLevelModules = courseModules.filter((module: Module) => !module.parentModuleId);
+  const childModules = (parentId: string) => courseModules.filter((module: Module) => module.parentModuleId === parentId);
 
   return (
     <div className="space-y-6">
@@ -674,7 +685,7 @@ function ModulePanel({ courses, selectedCourseId, chooseCourse, modules, draft, 
             <Field label="Prerequisite">
               <select className="h-10 rounded-md border bg-background px-3 text-sm" value={draft.prerequisiteModuleId} onChange={(e) => setDraft({ ...draft, prerequisiteModuleId: e.target.value })}>
                 <option value="">None</option>
-                {modules.map((m: Module) => (
+                {courseModules.filter((module: Module) => module.id !== editingModuleId).map((m: Module) => (
                   <option key={m.id} value={m.id}>{m.order}. {m.title}</option>
                 ))}
               </select>
@@ -685,7 +696,7 @@ function ModulePanel({ courses, selectedCourseId, chooseCourse, modules, draft, 
             <Field label="Parent module">
               <select className="h-10 rounded-md border bg-background px-3 text-sm" value={draft.parentModuleId} onChange={(e) => setDraft({ ...draft, parentModuleId: e.target.value })}>
                 <option value="">Top-level module</option>
-                {modules.filter((m: Module) => !m.parentModuleId).map((m: Module) => (
+                {topLevelModules.filter((module: Module) => module.id !== editingModuleId).map((m: Module) => (
                   <option key={m.id} value={m.id}>{m.order}. {m.title}</option>
                 ))}
               </select>

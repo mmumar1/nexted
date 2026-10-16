@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, boolean, integer, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
-import { isNigerianLga, isNigerianState } from "./nigeria-locations";
+import { isNigerianLga, isNigerianState } from "./nigeria-locations.js";
 
 // Users table
 export const users = pgTable("users", {

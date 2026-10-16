@@ -6,11 +6,26 @@ security definer
 set search_path = public
 as $$
 begin
-  insert into public.profiles (id, email, full_name, role)
+  insert into public.profiles (
+    id,
+    email,
+    full_name,
+    state,
+    local_government_area,
+    phone_number,
+    whatsapp_number,
+    referral_code,
+    role
+  )
   values (
     new.id,
     new.email,
     coalesce(new.raw_user_meta_data->>'full_name', split_part(new.email, '@', 1)),
+    nullif(trim(new.raw_user_meta_data->>'state'), ''),
+    nullif(trim(new.raw_user_meta_data->>'local_government_area'), ''),
+    nullif(trim(new.raw_user_meta_data->>'phone_number'), ''),
+    nullif(trim(new.raw_user_meta_data->>'whatsapp_number'), ''),
+    nullif(trim(new.raw_user_meta_data->>'referral_code'), ''),
     'student'
   )
   on conflict (id) do nothing;

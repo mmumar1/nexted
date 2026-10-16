@@ -40,6 +40,11 @@ function mapProfile(row: DatabaseRow): User {
     hasActiveSubscription: row.has_active_subscription,
     subscriptionTier: row.subscription_tier,
     subscriptionPaidAt: row.subscription_paid_at ? new Date(row.subscription_paid_at) : null,
+    state: row.state ?? null,
+    localGovernmentArea: row.local_government_area ?? null,
+    phoneNumber: row.phone_number ?? null,
+    whatsappNumber: row.whatsapp_number ?? null,
+    referralCode: row.referral_code ?? null,
   };
 }
 
@@ -136,6 +141,11 @@ export class SupabaseStorage implements IStorage {
       has_active_subscription: user.hasActiveSubscription ?? false,
       subscription_tier: user.subscriptionTier ?? "none",
       subscription_paid_at: user.subscriptionPaidAt?.toISOString() ?? null,
+      state: user.state ?? null,
+      local_government_area: user.localGovernmentArea ?? null,
+      phone_number: user.phoneNumber ?? null,
+      whatsapp_number: user.whatsappNumber ?? null,
+      referral_code: user.referralCode ?? null,
     }).select("*").single();
     return mapProfile(required(data, error)!);
   }

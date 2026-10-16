@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, boolean, integer, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+import { isNigerianLga, isNigerianState } from "./nigeria-locations";
 
 // Users table
 export const users = pgTable("users", {
@@ -13,11 +14,46 @@ export const users = pgTable("users", {
   hasActiveSubscription: boolean("has_active_subscription").notNull().default(false),
   subscriptionTier: text("subscription_tier").notNull().default("none"),
   subscriptionPaidAt: timestamp("subscription_paid_at"),
+  state: text("state"),
+  localGovernmentArea: text("local_government_area"),
+  phoneNumber: text("phone_number"),
+  whatsappNumber: text("whatsapp_number"),
+  referralCode: text("referral_code"),
 });
 
 export const insertUserSchema = createInsertSchema(users).omit({ id: true });
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
+
+export const registerSchema = z.object({
+  fullName: z.string().trim().min(2, "Enter your full name"),
+  email: z.string().trim().email("Please enter a valid email"),
+  password: z.string().min(6, "Password must be at least 6 characters"),
+  state: z.string().min(1, "Choose your state"),
+  localGovernmentArea: z.string().min(1, "Choose your local government area"),
+  phoneNumber: z.string().trim().regex(/^\+?[0-9][0-9\s().-]{6,19}$/, "Enter a valid phone number"),
+  whatsappNumber: z.string().trim().refine(
+    (value) => value === "" || /^\+?[0-9][0-9\s().-]{6,19}$/.test(value),
+    "Enter a valid WhatsApp number",
+  ),
+  referralCode: z.string().trim().max(80, "Referral code must be 80 characters or fewer"),
+}).superRefine((data, context) => {
+  if (!isNigerianState(data.state)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["state"],
+      message: "Choose a valid Nigerian state",
+    });
+  } else if (!isNigerianLga(data.state, data.localGovernmentArea)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["localGovernmentArea"],
+      message: "Choose a local government area in the selected state",
+    });
+  }
+});
+
+export type RegisterData = z.infer<typeof registerSchema>;
 
 // Courses table
 export const courses = pgTable("courses", {

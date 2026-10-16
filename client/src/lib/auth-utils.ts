@@ -8,6 +8,11 @@ export interface SupabaseProfile {
   has_active_subscription: boolean;
   subscription_tier: string;
   subscription_paid_at: string | null;
+  state: string | null;
+  local_government_area: string | null;
+  phone_number: string | null;
+  whatsapp_number: string | null;
+  referral_code: string | null;
 }
 
 export function isStaffRole(role: string): boolean {
@@ -26,5 +31,10 @@ export function mapSupabaseProfileToUser(profile: SupabaseProfile): User {
     subscriptionPaidAt: profile.subscription_paid_at
       ? new Date(profile.subscription_paid_at)
       : null,
+    state: profile.state ?? null,
+    localGovernmentArea: profile.local_government_area ?? null,
+    phoneNumber: profile.phone_number ?? null,
+    whatsappNumber: profile.whatsapp_number ?? null,
+    referralCode: profile.referral_code ?? null,
   };
 }

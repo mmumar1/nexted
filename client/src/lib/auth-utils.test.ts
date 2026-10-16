@@ -1,6 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { isStaffRole, mapSupabaseProfileToUser, type SupabaseProfile } from "./auth-utils";
+import { registerSchema } from "@shared/schema";
+import { NIGERIAN_LGAS_BY_STATE, NIGERIAN_STATES } from "@shared/nigeria-locations";
 
 const profile: SupabaseProfile = {
   id: "user-123",
@@ -10,6 +12,11 @@ const profile: SupabaseProfile = {
   has_active_subscription: true,
   subscription_tier: "one-time",
   subscription_paid_at: "2026-09-06T10:00:00.000Z",
+  state: "Lagos",
+  local_government_area: "Ikeja",
+  phone_number: "+234 801 234 5678",
+  whatsapp_number: null,
+  referral_code: "WELCOME",
 };
 
 describe("Supabase auth helpers", () => {
@@ -25,6 +32,11 @@ describe("Supabase auth helpers", () => {
       hasActiveSubscription: true,
       subscriptionTier: "one-time",
       subscriptionPaidAt: new Date("2026-09-06T10:00:00.000Z"),
+      state: "Lagos",
+      localGovernmentArea: "Ikeja",
+      phoneNumber: "+234 801 234 5678",
+      whatsappNumber: null,
+      referralCode: "WELCOME",
     });
   });
 
@@ -39,5 +51,29 @@ describe("Supabase auth helpers", () => {
     assert.equal(isStaffRole("super_admin"), true);
     assert.equal(isStaffRole("instructor"), true);
     assert.equal(isStaffRole("student"), false);
+  });
+
+  it("provides all Nigerian states and 774 state-specific local government areas", () => {
+    assert.equal(NIGERIAN_STATES.length, 37);
+    assert.equal(Object.values(NIGERIAN_LGAS_BY_STATE).reduce((count, lgas) => count + lgas.length, 0), 774);
+  });
+
+  it("validates registration details and rejects an LGA from another state", () => {
+    const registration = {
+      fullName: "Learner Example",
+      email: "learner@example.com",
+      password: "password123",
+      state: "Lagos",
+      localGovernmentArea: "Ikeja",
+      phoneNumber: "+234 801 234 5678",
+      whatsappNumber: "",
+      referralCode: "",
+    };
+
+    assert.equal(registerSchema.safeParse(registration).success, true);
+    assert.equal(registerSchema.safeParse({
+      ...registration,
+      localGovernmentArea: "Aba North",
+    }).success, false);
   });
 });

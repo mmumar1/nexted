@@ -103,6 +103,11 @@ export class MemStorage implements IStorage {
       hasActiveSubscription: false,
       subscriptionTier: "none",
       subscriptionPaidAt: null,
+      state: null,
+      localGovernmentArea: null,
+      phoneNumber: null,
+      whatsappNumber: null,
+      referralCode: null,
     });
 
     this.users.set("student-demo", {
@@ -114,6 +119,11 @@ export class MemStorage implements IStorage {
       hasActiveSubscription: false,
       subscriptionTier: "none",
       subscriptionPaidAt: null,
+      state: null,
+      localGovernmentArea: null,
+      phoneNumber: null,
+      whatsappNumber: null,
+      referralCode: null,
     });
 
     this.users.set("subscriber-demo", {
@@ -125,6 +135,11 @@ export class MemStorage implements IStorage {
       hasActiveSubscription: true,
       subscriptionTier: "one-time",
       subscriptionPaidAt: new Date(),
+      state: null,
+      localGovernmentArea: null,
+      phoneNumber: null,
+      whatsappNumber: null,
+      referralCode: null,
     });
     
     // Seed initial data
@@ -352,6 +367,11 @@ export class MemStorage implements IStorage {
       hasActiveSubscription: insertUser.hasActiveSubscription ?? false,
       subscriptionTier: insertUser.subscriptionTier ?? "none",
       subscriptionPaidAt: insertUser.subscriptionPaidAt ?? null,
+      state: insertUser.state ?? null,
+      localGovernmentArea: insertUser.localGovernmentArea ?? null,
+      phoneNumber: insertUser.phoneNumber ?? null,
+      whatsappNumber: insertUser.whatsappNumber ?? null,
+      referralCode: insertUser.referralCode ?? null,
     };
     this.users.set(id, user);
     return user;

@@ -98,7 +98,14 @@ export const modules = pgTable("modules", {
   duration: integer("duration").notNull().default(30),
 });
 
-export const insertModuleSchema = createInsertSchema(modules).omit({ id: true });
+export const httpImageUrlSchema = z.string().url().refine((value) => {
+  const protocol = new URL(value).protocol;
+  return protocol === "http:" || protocol === "https:";
+}, "Images must use an HTTP or HTTPS URL");
+
+export const insertModuleSchema = createInsertSchema(modules)
+  .omit({ id: true })
+  .extend({ imageUrl: httpImageUrlSchema.nullable().optional() });
 export type InsertModule = z.infer<typeof insertModuleSchema>;
 export type Module = typeof modules.$inferSelect;
 
@@ -128,14 +135,12 @@ export type InsertQuiz = z.infer<typeof insertQuizSchema>;
 export type Quiz = typeof quizzes.$inferSelect;
 
 // Quiz question type (not stored in DB, used in questions JSON)
-export const quizQuestionImageUrlSchema = z.string().url().refine((value) => {
-  const protocol = new URL(value).protocol;
-  return protocol === "http:" || protocol === "https:";
-}, "Explanation images must use an HTTP or HTTPS URL");
+export const quizQuestionImageUrlSchema = httpImageUrlSchema;
 
 export const quizQuestionSchema = z.object({
   id: z.string(),
   question: z.string().min(1),
+  questionImageUrl: quizQuestionImageUrlSchema.optional(),
   options: z.array(z.string()).length(4),
   correctAnswer: z.number().int().min(1).max(4),
   correctAnswerBase: z.literal(1).optional(),

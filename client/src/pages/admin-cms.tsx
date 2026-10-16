@@ -31,6 +31,7 @@ interface QuizRecord {
 interface QuizQuestionDraft {
   id: string;
   question: string;
+  questionImageUrl: string;
   explanation: string;
   explanationImageUrl: string;
   options: string[];
@@ -80,7 +81,7 @@ const isSuperAdmin = (role?: string | null) => ["admin", "super_admin"].includes
 const sections = new Set<Section>(["overview", "courses", "modules", "quizzes", "users", "enrollments", "analytics", "announcements"]);
 
 function createEmptyQuizQuestion(): QuizQuestionDraft {
-  return { id: crypto.randomUUID(), question: "", explanation: "", explanationImageUrl: "", options: ["", "", "", ""], correctAnswer: "1" };
+  return { id: crypto.randomUUID(), question: "", questionImageUrl: "", explanation: "", explanationImageUrl: "", options: ["", "", "", ""], correctAnswer: "1" };
 }
 
 function readCmsDraft(userId: string): Partial<PersistedCmsDraft> | null {
@@ -147,7 +148,10 @@ export default function AdminCms() {
         setQuizDraft({
           ...draft.quizDraft,
           questions: Array.isArray(draft.quizDraft.questions) && draft.quizDraft.questions.length
-            ? draft.quizDraft.questions
+            ? draft.quizDraft.questions.map((question) => ({
+                ...createEmptyQuizQuestion(),
+                ...question,
+              }))
             : [createEmptyQuizQuestion()],
         });
       }
@@ -337,6 +341,7 @@ export default function AdminCms() {
         questions: quizDraft.questions.map((question) => ({
           id: question.id,
           question: question.question,
+          questionImageUrl: question.questionImageUrl.trim() || undefined,
           explanation: question.explanation,
           explanationImageUrl: question.explanationImageUrl.trim() || undefined,
           options: question.options,
@@ -676,6 +681,7 @@ export default function AdminCms() {
                   questions: quiz.questions.map((question) => ({
                     id: question.id,
                     question: question.question,
+                    questionImageUrl: question.questionImageUrl || "",
                     explanation: question.explanation || "",
                     explanationImageUrl: question.explanationImageUrl || "",
                     options: question.options,
@@ -797,8 +803,23 @@ function ModulePanel({ courses, selectedCourseId, chooseCourse, modules, draft, 
           </div>
 
           <Field label="Content">
-            <QuizMarkdownEditor value={draft.content} onChange={(content) => setDraft({ ...draft, content })} placeholder="Write the lesson. Paste lists or LaTeX equations here." minHeight="min-h-56" />
+            <QuizMarkdownEditor value={draft.content} onChange={(content) => setDraft({ ...draft, content })} placeholder="Write the lesson. Paste lists or LaTeX equations here. Use Markdown image syntax to place an image within the text." minHeight="min-h-56" />
           </Field>
+
+          <Field label="Module image URL (optional)">
+            <Input
+              type="url"
+              value={draft.imageUrl}
+              onChange={(event) => setDraft({ ...draft, imageUrl: event.target.value })}
+              placeholder="https://example.com/lesson-image.png"
+            />
+          </Field>
+          <p className="-mt-3 text-sm text-muted-foreground">
+            This image appears with the lesson. To position images inside the explanation, use Markdown syntax: ![Description](image URL).
+          </p>
+          {draft.imageUrl.trim() && (
+            <img src={draft.imageUrl} alt="Module image preview" className="max-h-56 max-w-full rounded-md border object-contain" />
+          )}
 
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="Duration (minutes)">
@@ -931,7 +952,7 @@ function QuizPanel({ courses, selectedCourseId, chooseCourse, modules, quizzes, 
       <Card>
         <CardHeader>
           <CardTitle>{editingQuizId ? "Edit quiz" : "Quiz builder"}</CardTitle>
-          <CardDescription>Add as many questions as your module needs. Each question can include an explanation and an optional image.</CardDescription>
+          <CardDescription>Add as many questions as your module needs. Questions can include an optional image and explanation.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <CourseSelect courses={courses} value={selectedCourseId} onChange={chooseCourse} />
@@ -972,25 +993,25 @@ function QuizPanel({ courses, selectedCourseId, chooseCourse, modules, quizzes, 
                     <QuizMarkdownEditor value={question.question} onChange={(value) => updateQuestion(index, { question: value })} placeholder="Write the question. Paste lists or LaTeX equations here." />
                   </Field>
 
-                  <Field label="Explanation (optional)">
-                    <QuizMarkdownEditor value={question.explanation} onChange={(value) => updateQuestion(index, { explanation: value })} placeholder="Explain why the answer is correct." />
-                  </Field>
-
-                  <Field label="Explanation image URL (optional)">
+                  <Field label="Question image URL (optional)">
                     <Input
                       type="url"
-                      value={question.explanationImageUrl}
-                      onChange={(event) => updateQuestion(index, { explanationImageUrl: event.target.value })}
-                      placeholder="https://example.com/explanation-image.png"
+                      value={question.questionImageUrl}
+                      onChange={(event) => updateQuestion(index, { questionImageUrl: event.target.value })}
+                      placeholder="https://example.com/question-image.png"
                     />
                   </Field>
-                  {question.explanationImageUrl.trim() && (
+                  {question.questionImageUrl.trim() && (
                     <img
-                      src={question.explanationImageUrl}
-                      alt={`Preview for question ${index + 1} explanation`}
+                      src={question.questionImageUrl}
+                      alt={`Preview for question ${index + 1}`}
                       className="max-h-56 max-w-full rounded-md border object-contain"
                     />
                   )}
+
+                  <Field label="Explanation (optional)">
+                    <QuizMarkdownEditor value={question.explanation} onChange={(value) => updateQuestion(index, { explanation: value })} placeholder="Explain why the answer is correct." />
+                  </Field>
 
                   <div className="grid gap-3 md:grid-cols-2">
                     {question.options.map((option: string, optionIndex: number) => (

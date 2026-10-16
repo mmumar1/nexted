@@ -24,6 +24,7 @@ import { normalizeQuizQuestionIndex } from "../shared/quiz-utils.js";
 const quizQuestionInputSchema = z.object({
   id: z.string(),
   question: z.string().min(1),
+  questionImageUrl: quizQuestionImageUrlSchema.optional(),
   explanation: z.string().optional(),
   explanationImageUrl: quizQuestionImageUrlSchema.optional(),
   options: z.array(z.string().min(1)).length(4),

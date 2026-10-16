@@ -238,6 +238,13 @@ export default function Quiz() {
         <Card className="border-card-border mb-6">
           <CardHeader>
             <QuizMarkdownContent source={currentQ.question} className="text-xl leading-relaxed" />
+            {currentQ.questionImageUrl && (
+              <img
+                src={currentQ.questionImageUrl}
+                alt="Question illustration"
+                className="mt-4 max-h-80 max-w-full rounded-md border object-contain"
+              />
+            )}
           </CardHeader>
           <CardContent>
             <RadioGroup

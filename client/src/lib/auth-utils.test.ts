@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { isStaffRole, mapSupabaseProfileToUser, type SupabaseProfile } from "./auth-utils";
-import { quizQuestionSchema, registerSchema } from "@shared/schema";
+import { insertModuleSchema, quizQuestionSchema, registerSchema } from "@shared/schema";
 import { NIGERIAN_LGAS_BY_STATE, NIGERIAN_STATES } from "@shared/nigeria-locations";
 
 const profile: SupabaseProfile = {
@@ -77,21 +77,37 @@ describe("Supabase auth helpers", () => {
     }).success, false);
   });
 
-  it("accepts an explanation image URL on a quiz question and rejects unsafe protocols", () => {
+  it("accepts a question image URL and rejects unsafe protocols", () => {
     const question = {
       id: "question-1",
       question: "What does this diagram show?",
+      questionImageUrl: "https://cdn.example.com/diagram.png",
       options: ["A", "B", "C", "D"],
       correctAnswer: 1,
       correctAnswerBase: 1,
       explanation: "The diagram illustrates the correct answer.",
-      explanationImageUrl: "https://cdn.example.com/diagram.png",
     };
 
     assert.equal(quizQuestionSchema.safeParse(question).success, true);
     assert.equal(quizQuestionSchema.safeParse({
       ...question,
-      explanationImageUrl: "javascript:alert(1)",
+      questionImageUrl: "javascript:alert(1)",
+    }).success, false);
+  });
+
+  it("accepts HTTP(S) module image URLs and rejects unsafe protocols", () => {
+    const module = {
+      courseId: "course-1",
+      title: "Lesson",
+      order: 1,
+      content: "Lesson content",
+      imageUrl: "https://cdn.example.com/lesson.png",
+    };
+
+    assert.equal(insertModuleSchema.safeParse(module).success, true);
+    assert.equal(insertModuleSchema.safeParse({
+      ...module,
+      imageUrl: "javascript:alert(1)",
     }).success, false);
   });
 });

@@ -128,13 +128,19 @@ export type InsertQuiz = z.infer<typeof insertQuizSchema>;
 export type Quiz = typeof quizzes.$inferSelect;
 
 // Quiz question type (not stored in DB, used in questions JSON)
+export const quizQuestionImageUrlSchema = z.string().url().refine((value) => {
+  const protocol = new URL(value).protocol;
+  return protocol === "http:" || protocol === "https:";
+}, "Explanation images must use an HTTP or HTTPS URL");
+
 export const quizQuestionSchema = z.object({
   id: z.string(),
-  question: z.string(),
-  options: z.array(z.string()),
-  correctAnswer: z.number(),
+  question: z.string().min(1),
+  options: z.array(z.string()).length(4),
+  correctAnswer: z.number().int().min(1).max(4),
   correctAnswerBase: z.literal(1).optional(),
   explanation: z.string().optional(),
+  explanationImageUrl: quizQuestionImageUrlSchema.optional(),
 });
 
 export type QuizQuestion = z.infer<typeof quizQuestionSchema>;

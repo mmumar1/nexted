@@ -12,6 +12,7 @@ import {
   insertModuleCompletionSchema,
   insertQuizAttemptSchema,
   insertProjectSchema,
+  quizQuestionImageUrlSchema,
   type Module,
   type QuizQuestion,
 } from "../shared/schema.js";
@@ -24,6 +25,7 @@ const quizQuestionInputSchema = z.object({
   id: z.string(),
   question: z.string().min(1),
   explanation: z.string().optional(),
+  explanationImageUrl: quizQuestionImageUrlSchema.optional(),
   options: z.array(z.string().min(1)).length(4),
   correctAnswer: z.number().int().min(1).max(4),
   correctAnswerBase: z.literal(1),
@@ -656,12 +658,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.patch("/api/admin/quizzes/:id", async (req, res) => {
-    if (!(await requireAdmin(req.body.userId, res))) return;
-    const input = z.object({ moduleId: z.string().optional(), title: z.string().min(1).optional(), passScore: z.number().min(1).max(100).optional(), questions: z.array(quizQuestionInputSchema).min(1).optional() }).parse(req.body.quiz || {});
-    const questions = input.questions?.map(normalizeQuizQuestionIndex);
-    const quiz = await storage.updateQuiz(req.params.id, { ...input, questions: questions ? JSON.stringify(questions) : undefined });
-    if (!quiz) return res.status(404).json({ error: "Quiz not found" });
-    res.json({ ...quiz, questions: questions ?? (JSON.parse(quiz.questions) as QuizQuestion[]).map(normalizeQuizQuestionIndex) });
+    const requester = await requireAdmin(req.body.userId, res);
+    if (!requester) return;
+    try {
+      const input = z.object({
+        moduleId: z.string().optional(),
+        title: z.string().min(1).optional(),
+        passScore: z.number().min(1).max(100).optional(),
+        questions: z.array(quizQuestionInputSchema).min(1).optional(),
+      }).parse(req.body.quiz || {});
+      const existingQuiz = await storage.getQuiz(req.params.id);
+      if (!existingQuiz) return res.status(404).json({ error: "Quiz not found" });
+
+      const existingModule = await storage.getModule(existingQuiz.moduleId);
+      const existingCourse = existingModule ? await storage.getCourse(existingModule.courseId) : undefined;
+      if (!existingCourse) return res.status(404).json({ error: "Quiz module or course not found" });
+      if (!isSuperAdmin(requester.role) && existingCourse.instructorId !== requester.id) {
+        return res.status(403).json({ error: "You can only edit quizzes in your assigned courses" });
+      }
+
+      if (input.moduleId && input.moduleId !== existingQuiz.moduleId) {
+        const targetModule = await storage.getModule(input.moduleId);
+        const targetCourse = targetModule ? await storage.getCourse(targetModule.courseId) : undefined;
+        if (!targetModule || !targetCourse) return res.status(404).json({ error: "Target module or course not found" });
+        if (!isSuperAdmin(requester.role) && targetCourse.instructorId !== requester.id) {
+          return res.status(403).json({ error: "You can only move quizzes to your assigned courses" });
+        }
+      }
+
+      const questions = input.questions?.map(normalizeQuizQuestionIndex);
+      const quiz = await storage.updateQuiz(req.params.id, { ...input, questions: questions ? JSON.stringify(questions) : undefined });
+      if (!quiz) return res.status(404).json({ error: "Quiz not found" });
+      res.json({ ...quiz, questions: questions ?? (JSON.parse(quiz.questions) as QuizQuestion[]).map(normalizeQuizQuestionIndex) });
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
+      res.status(500).json({ error: "Failed to update quiz" });
+    }
   });
 
   app.delete("/api/admin/quizzes/:id", async (req, res) => {

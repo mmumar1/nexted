@@ -15,7 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
 import { QuizMarkdownEditor } from "@/components/quiz/quiz-markdown";
 import type { AnnouncementRecord } from "@/lib/announcements";
-import type { Course, Module, User } from "@shared/schema";
+import type { Course, Module, QuizQuestion, User } from "@shared/schema";
 import { BarChart3, BookOpen, FileQuestion, LayoutDashboard, Plus, Settings2, Trash2, UserRound, Users } from "lucide-react";
 
 type Section = "overview" | "courses" | "modules" | "quizzes" | "users" | "enrollments" | "analytics" | "announcements";
@@ -25,7 +25,34 @@ interface QuizRecord {
   moduleId: string;
   title: string;
   passScore: number;
-  questions: Array<{ id: string; question: string; options: string[]; correctAnswer: number }>;
+  questions: QuizQuestion[];
+}
+
+interface QuizQuestionDraft {
+  id: string;
+  question: string;
+  explanation: string;
+  explanationImageUrl: string;
+  options: string[];
+  correctAnswer: string;
+}
+
+interface QuizDraft {
+  moduleId: string;
+  title: string;
+  passScore: string;
+  questions: QuizQuestionDraft[];
+}
+
+interface PersistedCmsDraft {
+  section: Section;
+  selectedCourseId: string;
+  courseDraft: { title: string; description: string; enrollmentMode: string; instructorId: string; thumbnail: string; isPublished: boolean };
+  newCourseDraft: { title: string; description: string; enrollmentMode: string; instructorId: string; thumbnail: string; isPublished: boolean };
+  moduleDraft: { title: string; order: string; content: string; duration: string; parentModuleId: string; prerequisiteModuleId: string; videoUrl: string; imageUrl: string };
+  editingModuleId: string | null;
+  quizDraft: QuizDraft;
+  editingQuizId: string | null;
 }
 
 interface Analytics {
@@ -50,19 +77,51 @@ const navItems: Array<{ id: Section; label: string; icon: typeof LayoutDashboard
 
 const isStaffRole = (role?: string | null) => ["admin", "super_admin", "instructor"].includes(role || "");
 const isSuperAdmin = (role?: string | null) => ["admin", "super_admin"].includes(role || "");
+const sections = new Set<Section>(["overview", "courses", "modules", "quizzes", "users", "enrollments", "analytics", "announcements"]);
+
+function createEmptyQuizQuestion(): QuizQuestionDraft {
+  return { id: crypto.randomUUID(), question: "", explanation: "", explanationImageUrl: "", options: ["", "", "", ""], correctAnswer: "1" };
+}
+
+function readCmsDraft(userId: string): Partial<PersistedCmsDraft> | null {
+  if (!userId) return null;
+  try {
+    const stored = sessionStorage.getItem(`admin-cms-draft:${userId}`);
+    if (!stored) return null;
+    const value: unknown = JSON.parse(stored);
+    if (!value || typeof value !== "object") return null;
+    const draft = value as Partial<PersistedCmsDraft>;
+    return {
+      ...(draft.section && sections.has(draft.section) ? { section: draft.section } : {}),
+      ...(typeof draft.selectedCourseId === "string" ? { selectedCourseId: draft.selectedCourseId } : {}),
+      ...(draft.courseDraft && typeof draft.courseDraft === "object" ? { courseDraft: draft.courseDraft } : {}),
+      ...(draft.newCourseDraft && typeof draft.newCourseDraft === "object" ? { newCourseDraft: draft.newCourseDraft } : {}),
+      ...(draft.moduleDraft && typeof draft.moduleDraft === "object" ? { moduleDraft: draft.moduleDraft } : {}),
+      ...(draft.editingModuleId === null || typeof draft.editingModuleId === "string" ? { editingModuleId: draft.editingModuleId } : {}),
+      ...(draft.quizDraft && typeof draft.quizDraft === "object" ? { quizDraft: draft.quizDraft } : {}),
+      ...(draft.editingQuizId === null || typeof draft.editingQuizId === "string" ? { editingQuizId: draft.editingQuizId } : {}),
+    };
+  } catch (error) {
+    console.error("Failed to restore the admin CMS draft:", error);
+    return null;
+  }
+}
 
 export default function AdminCms() {
   const [, setLocation] = useLocation();
   const { user, isAuthenticated } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const adminId = user?.id || "";
   const [section, setSection] = useState<Section>("overview");
   const [selectedCourseId, setSelectedCourseId] = useState("");
   const [courseDraft, setCourseDraft] = useState({ title: "", description: "", enrollmentMode: "self", instructorId: "", thumbnail: "", isPublished: false });
   const [newCourseDraft, setNewCourseDraft] = useState({ title: "", description: "", enrollmentMode: "self", instructorId: "", thumbnail: "", isPublished: false });
   const [moduleDraft, setModuleDraft] = useState({ title: "", order: "1", content: "", duration: "30", parentModuleId: "", prerequisiteModuleId: "", videoUrl: "", imageUrl: "" });
   const [editingModuleId, setEditingModuleId] = useState<string | null>(null);
-  const [quizDraft, setQuizDraft] = useState({ moduleId: "", title: "", passScore: "70", question: "", explanation: "", options: ["", "", "", ""], correctAnswer: "1" });
+  const [quizDraft, setQuizDraft] = useState<QuizDraft>({ moduleId: "", title: "", passScore: "70", questions: [createEmptyQuizQuestion()] });
+  const [editingQuizId, setEditingQuizId] = useState<string | null>(null);
+  const [restoredDraftUserId, setRestoredDraftUserId] = useState("");
   const [enrollment, setEnrollment] = useState({ userId: "", courseId: "" });
   const [instructorDraft, setInstructorDraft] = useState({ fullName: "", email: "", password: "" });
   const [createdInstructor, setCreatedInstructor] = useState<{ fullName: string; email: string; temporaryPassword: string } | null>(null);
@@ -70,11 +129,51 @@ export default function AdminCms() {
   const courseEditorRef = useRef<HTMLDivElement>(null);
 
   const canManage = !!user && isStaffRole(user.role);
-  const adminId = user?.id || "";
 
   useEffect(() => {
     if (!isAuthenticated) setLocation("/login");
   }, [isAuthenticated, setLocation]);
+
+  useEffect(() => {
+    const draft = readCmsDraft(adminId);
+    if (draft) {
+      if (draft.section) setSection(draft.section);
+      if (typeof draft.selectedCourseId === "string") setSelectedCourseId(draft.selectedCourseId);
+      if (draft.courseDraft) setCourseDraft((current) => ({ ...current, ...draft.courseDraft }));
+      if (draft.newCourseDraft) setNewCourseDraft((current) => ({ ...current, ...draft.newCourseDraft }));
+      if (draft.moduleDraft) setModuleDraft((current) => ({ ...current, ...draft.moduleDraft }));
+      if (draft.editingModuleId !== undefined) setEditingModuleId(draft.editingModuleId);
+      if (draft.quizDraft) {
+        setQuizDraft({
+          ...draft.quizDraft,
+          questions: Array.isArray(draft.quizDraft.questions) && draft.quizDraft.questions.length
+            ? draft.quizDraft.questions
+            : [createEmptyQuizQuestion()],
+        });
+      }
+      if (draft.editingQuizId !== undefined) setEditingQuizId(draft.editingQuizId);
+    }
+    setRestoredDraftUserId(adminId);
+  }, [adminId]);
+
+  useEffect(() => {
+    if (!adminId || restoredDraftUserId !== adminId) return;
+    try {
+      const draft: PersistedCmsDraft = {
+        section,
+        selectedCourseId,
+        courseDraft,
+        newCourseDraft,
+        moduleDraft,
+        editingModuleId,
+        quizDraft,
+        editingQuizId,
+      };
+      sessionStorage.setItem(`admin-cms-draft:${adminId}`, JSON.stringify(draft));
+    } catch (error) {
+      console.error("Failed to save the admin CMS draft:", error);
+    }
+  }, [adminId, restoredDraftUserId, section, selectedCourseId, courseDraft, newCourseDraft, moduleDraft, editingModuleId, quizDraft, editingQuizId]);
 
   useEffect(() => {
     if (section === "courses" && selectedCourseId) {
@@ -196,7 +295,8 @@ export default function AdminCms() {
       });
       setModuleDraft({ title: "", order: "1", content: "", duration: "30", parentModuleId: "", prerequisiteModuleId: "", videoUrl: "", imageUrl: "" });
       setEditingModuleId(null);
-      setQuizDraft({ moduleId: "", title: "", passScore: "70", question: "", explanation: "", options: ["", "", "", ""], correctAnswer: "1" });
+      setQuizDraft({ moduleId: "", title: "", passScore: "70", questions: [createEmptyQuizQuestion()] });
+      setEditingQuizId(null);
       setNewCourseDraft({ title: "", description: "", enrollmentMode: "self", instructorId: user?.id || "", thumbnail: "", isPublished: false });
       setSection("modules");
       toast({ title: "Course created", description: "Add modules and publish it when your content is ready." });
@@ -228,26 +328,28 @@ export default function AdminCms() {
   });
 
   const saveQuiz = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/admin/quizzes", {
+    mutationFn: () => apiRequest(editingQuizId ? "PATCH" : "POST", editingQuizId ? `/api/admin/quizzes/${editingQuizId}` : "/api/admin/quizzes", {
       userId: adminId,
       quiz: {
         moduleId: quizDraft.moduleId,
         title: quizDraft.title,
         passScore: Number(quizDraft.passScore),
-        questions: [{
-          id: crypto.randomUUID(),
-          question: quizDraft.question,
-          explanation: quizDraft.explanation,
-          options: quizDraft.options,
-          correctAnswer: Number(quizDraft.correctAnswer),
+        questions: quizDraft.questions.map((question) => ({
+          id: question.id,
+          question: question.question,
+          explanation: question.explanation,
+          explanationImageUrl: question.explanationImageUrl.trim() || undefined,
+          options: question.options,
+          correctAnswer: Number(question.correctAnswer),
           correctAnswerBase: 1,
-        }],
+        })),
       },
     }),
-    onSuccess: () => {
+    onSuccess: (_quiz, _variables, _context) => {
       invalidate(["/api/admin/quizzes", adminId]);
-      setQuizDraft({ moduleId: "", title: "", passScore: "70", question: "", explanation: "", options: ["", "", "", ""], correctAnswer: "1" });
-      toast({ title: "Quiz created" });
+      setQuizDraft({ moduleId: "", title: "", passScore: "70", questions: [createEmptyQuizQuestion()] });
+      setEditingQuizId(null);
+      toast({ title: editingQuizId ? "Quiz updated" : "Quiz created" });
     },
     onError: (error: Error) => toast({ title: "Could not create quiz", description: error.message, variant: "destructive" }),
   });
@@ -564,6 +666,27 @@ export default function AdminCms() {
               quizzes={quizzes.data || []}
               draft={quizDraft}
               setDraft={setQuizDraft}
+              editingQuizId={editingQuizId}
+              onEdit={(quiz: QuizRecord) => {
+                setEditingQuizId(quiz.id);
+                setQuizDraft({
+                  moduleId: quiz.moduleId,
+                  title: quiz.title,
+                  passScore: String(quiz.passScore),
+                  questions: quiz.questions.map((question) => ({
+                    id: question.id,
+                    question: question.question,
+                    explanation: question.explanation || "",
+                    explanationImageUrl: question.explanationImageUrl || "",
+                    options: question.options,
+                    correctAnswer: String(question.correctAnswer),
+                  })),
+                });
+              }}
+              onCancelEdit={() => {
+                setEditingQuizId(null);
+                setQuizDraft({ moduleId: "", title: "", passScore: "70", questions: [createEmptyQuizQuestion()] });
+              }}
               onSave={() => saveQuiz.mutate()}
               onDelete={(id: string) => deleteQuiz.mutate(id)}
               pending={saveQuiz.isPending}
@@ -793,13 +916,22 @@ function ModulePanel({ courses, selectedCourseId, chooseCourse, modules, draft, 
   );
 }
 
-function QuizPanel({ courses, selectedCourseId, chooseCourse, modules, quizzes, draft, setDraft, onSave, onDelete, pending }: any) {
+function QuizPanel({ courses, selectedCourseId, chooseCourse, modules, quizzes, draft, setDraft, editingQuizId, onEdit, onCancelEdit, onSave, onDelete, pending }: any) {
+  const updateQuestion = (index: number, update: Partial<QuizQuestionDraft>) => {
+    setDraft({
+      ...draft,
+      questions: draft.questions.map((question: QuizQuestionDraft, questionIndex: number) =>
+        questionIndex === index ? { ...question, ...update } : question,
+      ),
+    });
+  };
+
   return (
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Quiz builder</CardTitle>
-          <CardDescription>Create a quiz with a question and passing score.</CardDescription>
+          <CardTitle>{editingQuizId ? "Edit quiz" : "Quiz builder"}</CardTitle>
+          <CardDescription>Add as many questions as your module needs. Each question can include an explanation and an optional image.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <CourseSelect courses={courses} value={selectedCourseId} onChange={chooseCourse} />
@@ -821,38 +953,87 @@ function QuizPanel({ courses, selectedCourseId, chooseCourse, modules, quizzes, 
             <Input type="number" min="1" max="100" value={draft.passScore} onChange={(e) => setDraft({ ...draft, passScore: e.target.value })} />
           </Field>
 
-          <Field label="Question">
-            <QuizMarkdownEditor value={draft.question} onChange={(question) => setDraft({ ...draft, question })} placeholder="Write the question. Paste lists or LaTeX equations here." />
-          </Field>
+          <div className="space-y-4">
+            {draft.questions.map((question: QuizQuestionDraft, index: number) => (
+              <Card key={question.id} className="border-dashed">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0">
+                  <CardTitle className="text-base">Question {index + 1}</CardTitle>
+                  {draft.questions.length > 1 && (
+                    <Button type="button" variant="ghost" size="sm" onClick={() => setDraft({
+                      ...draft,
+                      questions: draft.questions.filter((_: QuizQuestionDraft, questionIndex: number) => questionIndex !== index),
+                    })}>
+                      <Trash2 className="mr-2 h-4 w-4" />Remove
+                    </Button>
+                  )}
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <Field label="Question">
+                    <QuizMarkdownEditor value={question.question} onChange={(value) => updateQuestion(index, { question: value })} placeholder="Write the question. Paste lists or LaTeX equations here." />
+                  </Field>
 
-          <Field label="Explanation (optional)">
-            <QuizMarkdownEditor value={draft.explanation} onChange={(explanation) => setDraft({ ...draft, explanation })} placeholder="Explain why the answer is correct." />
-          </Field>
+                  <Field label="Explanation (optional)">
+                    <QuizMarkdownEditor value={question.explanation} onChange={(value) => updateQuestion(index, { explanation: value })} placeholder="Explain why the answer is correct." />
+                  </Field>
 
-          <div className="grid gap-3 md:grid-cols-2">
-            {draft.options.map((option: string, index: number) => (
-              <Field key={index} label={`Option ${index + 1}`}>
-                <Input
-                  value={option}
-                  onChange={(e) => {
-                    const options = [...draft.options];
-                    options[index] = e.target.value;
-                    setDraft({ ...draft, options });
-                  }}
-                />
-              </Field>
+                  <Field label="Explanation image URL (optional)">
+                    <Input
+                      type="url"
+                      value={question.explanationImageUrl}
+                      onChange={(event) => updateQuestion(index, { explanationImageUrl: event.target.value })}
+                      placeholder="https://example.com/explanation-image.png"
+                    />
+                  </Field>
+                  {question.explanationImageUrl.trim() && (
+                    <img
+                      src={question.explanationImageUrl}
+                      alt={`Preview for question ${index + 1} explanation`}
+                      className="max-h-56 max-w-full rounded-md border object-contain"
+                    />
+                  )}
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {question.options.map((option: string, optionIndex: number) => (
+                      <Field key={optionIndex} label={`Option ${optionIndex + 1}`}>
+                        <Input
+                          value={option}
+                          onChange={(event) => {
+                            const options = [...question.options];
+                            options[optionIndex] = event.target.value;
+                            updateQuestion(index, { options });
+                          }}
+                        />
+                      </Field>
+                    ))}
+                  </div>
+
+                  <Field label="Correct option">
+                    <select className="h-10 w-full rounded-md border bg-background px-3 text-sm text-foreground" value={question.correctAnswer} onChange={(event) => updateQuestion(index, { correctAnswer: event.target.value })}>
+                      {[1, 2, 3, 4].map((optionNumber) => <option key={optionNumber} value={optionNumber}>Option {optionNumber}</option>)}
+                    </select>
+                  </Field>
+                </CardContent>
+              </Card>
             ))}
           </div>
 
-          <Field label="Correct option">
-            <select className="h-10 w-full rounded-md border bg-background px-3 text-sm text-foreground" value={draft.correctAnswer} onChange={(event) => setDraft({ ...draft, correctAnswer: event.target.value })}>
-              {[1, 2, 3, 4].map((optionNumber) => <option key={optionNumber} value={optionNumber}>Option {optionNumber}</option>)}
-            </select>
-          </Field>
-
-          <Button disabled={pending || !selectedCourseId || !draft.moduleId || !draft.title.trim() || !draft.question.trim() || draft.options.some((option: string) => !option.trim())} onClick={onSave}>
-            <Plus className="mr-2 h-4 w-4" />Create quiz
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setDraft({ ...draft, questions: [...draft.questions, createEmptyQuizQuestion()] })}
+          >
+            <Plus className="mr-2 h-4 w-4" />Add question
           </Button>
+
+          <div className="flex flex-wrap gap-2">
+            <Button
+              disabled={pending || !selectedCourseId || !draft.moduleId || !draft.title.trim() || draft.questions.some((question: QuizQuestionDraft) => !question.question.trim() || question.options.some((option) => !option.trim()))}
+              onClick={onSave}
+            >
+              {editingQuizId ? "Save quiz" : "Create quiz"}
+            </Button>
+            {editingQuizId && <Button variant="outline" onClick={onCancelEdit}>Cancel edit</Button>}
+          </div>
         </CardContent>
       </Card>
 
@@ -865,11 +1046,14 @@ function QuizPanel({ courses, selectedCourseId, chooseCourse, modules, quizzes, 
             <div key={quiz.id} className="flex items-center justify-between py-3">
               <div>
                 <p className="font-medium">{quiz.title}</p>
-                <p className="text-sm text-muted-foreground">Pass score: {quiz.passScore}%</p>
+                <p className="text-sm text-muted-foreground">{quiz.questions.length} questions · Pass score: {quiz.passScore}%</p>
               </div>
-              <Button variant="ghost" size="sm" onClick={() => onDelete(quiz.id)}>
-                <Trash2 className="h-4 w-4" />
-              </Button>
+              <div className="flex gap-1">
+                <Button variant="outline" size="sm" onClick={() => onEdit(quiz)}>Edit</Button>
+                <Button variant="ghost" size="sm" onClick={() => onDelete(quiz.id)}>
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
           ))}
         </CardContent>

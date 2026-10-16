@@ -100,8 +100,8 @@ export default function Register() {
           <CardHeader className="space-y-1 text-center">
             <div className="flex justify-center mb-4">
               <div className="text-left">
-                <div className="text-2xl font-bold text-foreground">AT School</div>
-                <div className="text-xs text-muted-foreground">Amplify Tutorial</div>
+                <div className="text-2xl font-bold text-foreground">Learnpedia</div>
+                <div className="text-xs text-muted-foreground">Learn Without limits</div>
               </div>
             </div>
             <CardTitle className="text-2xl font-bold">Create Account</CardTitle>
@@ -272,7 +272,7 @@ export default function Register() {
         </Card>
 
         <p className="text-center text-sm text-muted-foreground">
-          Join 1,000+ students learning with AT School
+          Join over 1,000+ students learning with Learnpedia.
         </p>
       </div>
     </div>

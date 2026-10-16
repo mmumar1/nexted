@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useRef, type ReactNode } from "react";
 import type { User } from "@shared/schema";
 import { supabase } from "@/lib/supabase";
 import { mapSupabaseProfileToUser, type SupabaseProfile } from "@/lib/auth-utils";
@@ -24,48 +24,89 @@ function normalizeUser(user: User): User {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const profileRequestId = useRef(0);
+  const loadedUserId = useRef<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
 
-    const loadProfile = async (userId: string) => {
+    const loadProfile = async (userId: string, requestId: number) => {
       const { data: profile, error } = await supabase
         .from("profiles")
         .select("*")
         .eq("id", userId)
         .single();
       if (error) throw error;
-      if (mounted) setUser(normalizeUser(mapSupabaseProfileToUser(profile as SupabaseProfile)));
+      if (mounted && profileRequestId.current === requestId) {
+        loadedUserId.current = userId;
+        setUser(normalizeUser(mapSupabaseProfileToUser(profile as SupabaseProfile)));
+        setIsLoading(false);
+      }
     };
 
-    void supabase.auth.getSession().then(async ({ data, error }) => {
-      if (error) console.error("Failed to restore Supabase session:", error);
-      try {
-        if (data.session?.user) await loadProfile(data.session.user.id);
-      } catch (profileError) {
-        console.error("Failed to load Supabase profile:", profileError);
-        if (mounted) setUser(null);
-      } finally {
-        if (mounted) setIsLoading(false);
+    const loadSessionProfile = (userId: string) => {
+      if (loadedUserId.current !== userId) {
+        loadedUserId.current = null;
+        setUser(null);
+        setIsLoading(true);
       }
-    });
+      const requestId = ++profileRequestId.current;
+      window.setTimeout(() => {
+        void loadProfile(userId, requestId).catch((error) => {
+          console.error("Failed to load Supabase profile:", error);
+          if (mounted && profileRequestId.current === requestId) {
+            if (!loadedUserId.current) setUser(null);
+            setIsLoading(false);
+          }
+        });
+      }, 0);
+    };
 
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === "SIGNED_OUT") {
+      if (event === "SIGNED_OUT" || !session) {
+        profileRequestId.current++;
+        loadedUserId.current = null;
         setUser(null);
+        setIsLoading(false);
         return;
       }
-      if (session?.user) void loadProfile(session.user.id).catch((error) => console.error("Failed to load Supabase profile:", error));
+
+      if (event === "TOKEN_REFRESHED" && loadedUserId.current === session.user.id) return;
+      loadSessionProfile(session.user.id);
     });
+
+    const refreshSessionProfile = () => {
+      if (document.visibilityState !== "visible") return;
+      void supabase.auth.getSession().then(({ data, error }) => {
+        if (error) {
+          console.error("Failed to restore Supabase session:", error);
+          return;
+        }
+        const sessionUser = data.session?.user;
+        if (!sessionUser) {
+          profileRequestId.current++;
+          loadedUserId.current = null;
+          setUser(null);
+          setIsLoading(false);
+          return;
+        }
+        if (loadedUserId.current !== sessionUser.id) loadSessionProfile(sessionUser.id);
+      }).catch((error) => console.error("Failed to restore Supabase session:", error));
+    };
+
+    document.addEventListener("visibilitychange", refreshSessionProfile);
 
     return () => {
       mounted = false;
+      document.removeEventListener("visibilitychange", refreshSessionProfile);
       authListener.subscription.unsubscribe();
     };
   }, []);
 
   const login = (user: User) => {
+    loadedUserId.current = user.id;
     setUser(normalizeUser(user));
+    setIsLoading(false);
   };
 
   const logout = () => {

@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { isStaffRole, mapSupabaseProfileToUser, type SupabaseProfile } from "./auth-utils";
-import { registerSchema } from "@shared/schema";
+import { quizQuestionSchema, registerSchema } from "@shared/schema";
 import { NIGERIAN_LGAS_BY_STATE, NIGERIAN_STATES } from "@shared/nigeria-locations";
 
 const profile: SupabaseProfile = {
@@ -74,6 +74,24 @@ describe("Supabase auth helpers", () => {
     assert.equal(registerSchema.safeParse({
       ...registration,
       localGovernmentArea: "Aba North",
+    }).success, false);
+  });
+
+  it("accepts an explanation image URL on a quiz question and rejects unsafe protocols", () => {
+    const question = {
+      id: "question-1",
+      question: "What does this diagram show?",
+      options: ["A", "B", "C", "D"],
+      correctAnswer: 1,
+      correctAnswerBase: 1,
+      explanation: "The diagram illustrates the correct answer.",
+      explanationImageUrl: "https://cdn.example.com/diagram.png",
+    };
+
+    assert.equal(quizQuestionSchema.safeParse(question).success, true);
+    assert.equal(quizQuestionSchema.safeParse({
+      ...question,
+      explanationImageUrl: "javascript:alert(1)",
     }).success, false);
   });
 });

@@ -41,7 +41,7 @@ export default function Quiz() {
     }
   }, [isAuthenticated, setLocation]);
 
-  const { data: quiz, isLoading } = useQuery<QuizData>({
+  const { data: quiz, isLoading, error: quizError } = useQuery<QuizData>({
     queryKey: ["/api/quizzes/module", moduleId],
     enabled: !!moduleId,
   });
@@ -137,7 +137,7 @@ export default function Quiz() {
     setLocation(`/course/${courseId}`);
   };
 
-  if (isLoading || !quiz) {
+  if (isLoading) {
     return (
       <div className="min-h-screen bg-background">
         <Navbar />
@@ -157,6 +157,28 @@ export default function Quiz() {
             </CardContent>
           </Card>
         </div>
+      </div>
+    );
+  }
+
+  if (quizError || !quiz || quiz.questions.length === 0) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Navbar />
+        <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
+          <Card>
+            <CardContent className="space-y-4 pt-6">
+              <p className="text-destructive">
+                {quizError instanceof Error
+                  ? quizError.message
+                  : quiz
+                    ? "This quiz does not have any questions yet."
+                    : "A quiz for this module could not be found."}
+              </p>
+              <Button variant="secondary" onClick={handleBackToCourse}>Back to course</Button>
+            </CardContent>
+          </Card>
+        </main>
       </div>
     );
   }
@@ -319,12 +341,19 @@ export default function Quiz() {
             </div>
           </div>
 
-          {quiz.questions.some((question) => question.explanation?.trim()) && (
+          {quiz.questions.some((question) => question.explanation?.trim() || question.explanationImageUrl?.trim()) && (
             <div className="max-h-64 space-y-4 overflow-y-auto border-t pt-4">
-              {quiz.questions.map((question, index) => question.explanation?.trim() ? (
+              {quiz.questions.map((question, index) => question.explanation?.trim() || question.explanationImageUrl?.trim() ? (
                 <section key={question.id} className="space-y-2">
                   <h3 className="text-sm font-semibold">Explanation {quiz.questions.length > 1 ? index + 1 : ""}</h3>
-                  <QuizMarkdownContent source={question.explanation} />
+                  {question.explanation?.trim() && <QuizMarkdownContent source={question.explanation} />}
+                  {question.explanationImageUrl?.trim() && (
+                    <img
+                      src={question.explanationImageUrl}
+                      alt={`Explanation image for question ${index + 1}`}
+                      className="max-h-64 max-w-full rounded-md border object-contain"
+                    />
+                  )}
                 </section>
               ) : null)}
             </div>

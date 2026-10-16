@@ -18,8 +18,7 @@ This folder contains the starting database schema and row-level security setup f
 3. Run `rls.sql` second.
 4. Register one user in Learnpedia, promote that user's profile to `super_admin`, then run `seed.sql`.
 5. Add the following environment variables to your Vercel app/server:
-   - `VITE_SUPABASE_URL`
-   - `VITE_SUPABASE_ANON_KEY`
+   - `SUPABASE_URL` and `SUPABASE_ANON_KEY` (or the legacy `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`)
    - `SUPABASE_SERVICE_ROLE_KEY`
    - `STRIPE_SECRET_KEY`
    - `PAYSTACK_SECRET_KEY`
@@ -137,15 +136,15 @@ This repository includes `vercel.json` and `api/index.ts`. Vercel serves the Vit
 Add these variables in **Vercel -> Project Settings -> Environment Variables** for Preview and Production:
 
 ```env
-VITE_SUPABASE_URL=https://your-project-id.supabase.co
-VITE_SUPABASE_ANON_KEY=your-anon-public-key
+SUPABASE_URL=https://your-project-id.supabase.co
+SUPABASE_ANON_KEY=your-anon-public-key
 SUPABASE_SERVICE_ROLE_KEY=your-server-only-service-role-key
 PAYSTACK_SECRET_KEY=sk_live_or_sk_test_your-secret
 PAYSTACK_PLAN_AMOUNT=100000
 PAYSTACK_CALLBACK_URL=https://your-project.vercel.app/profile
 ```
 
-Do not upload `.env.local` or add service keys with a `VITE_` prefix. Configure these Supabase redirect URLs for password reset:
+The Supabase URL and anon key are public client configuration. The Vite build explicitly maps the unprefixed names to the client's `import.meta.env` values; alternatively, retain the `VITE_` names. Mark these two values as **Config** in Vercel, not Sensitive. Keep service keys without a `VITE_` prefix and private. Do not upload `.env.local`. Configure these Supabase redirect URLs for password reset:
 
 ```text
 https://your-project.vercel.app/reset-password

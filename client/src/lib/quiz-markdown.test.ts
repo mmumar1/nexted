@@ -39,4 +39,13 @@ describe("quiz markdown math delimiters", () => {
 
     assert.match(html, /class="katex"/);
   });
+
+  it("renders Markdown images from HTTP(S) URLs", () => {
+    const html = renderToStaticMarkup(createElement(QuizMarkdownContent, {
+      source: "![Diagram](https://cdn.example.com/diagram.png)",
+    }));
+
+    assert.match(html, /<img[^>]+src="https:\/\/cdn\.example\.com\/diagram\.png"/);
+    assert.match(html, /alt="Diagram"/);
+  });
 });

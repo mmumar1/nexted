@@ -6,8 +6,9 @@ import remarkMath from "remark-math";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize from "rehype-sanitize";
 import rehypeKatex from "rehype-katex";
-import { Bold, Eye, Italic, List, ListOrdered, Pencil, Sigma } from "lucide-react";
+import { Bold, Eye, ImagePlus, Italic, List, ListOrdered, Pencil, Sigma } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { normalizeMathDelimiters } from "@/lib/quiz-markdown";
 
@@ -26,11 +27,44 @@ interface QuizMarkdownEditorProps {
   onChange: (value: string) => void;
   placeholder?: string;
   minHeight?: string;
+  enableImageInsert?: boolean;
 }
 
-export function QuizMarkdownEditor({ value, onChange, placeholder, minHeight = "min-h-40" }: QuizMarkdownEditorProps) {
+export function QuizMarkdownEditor({ value, onChange, placeholder, minHeight = "min-h-40", enableImageInsert = false }: QuizMarkdownEditorProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [preview, setPreview] = useState(false);
+  const [imageUrl, setImageUrl] = useState("");
+  const [imageAlt, setImageAlt] = useState("");
+
+  const insertImage = () => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    let imageUrlObject: URL;
+    try {
+      imageUrlObject = new URL(imageUrl.trim());
+    } catch {
+      return;
+    }
+    if (imageUrlObject.protocol !== "http:" && imageUrlObject.protocol !== "https:") return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const alt = imageAlt.trim() || "Image";
+    const markdown = `![${alt.replace(/[\[\]\\]/g, "\\$&")}](${imageUrlObject.href})`;
+    const prefix = start > 0 && value[start - 1] !== "\n" ? "\n" : "";
+    const suffix = end < value.length && value[end] !== "\n" ? "\n" : "";
+    const inserted = `${prefix}${markdown}${suffix}`;
+    const nextValue = `${value.slice(0, start)}${inserted}${value.slice(end)}`;
+    onChange(nextValue);
+    setImageUrl("");
+    setImageAlt("");
+    requestAnimationFrame(() => {
+      const cursor = start + inserted.length;
+      textarea.focus();
+      textarea.setSelectionRange(cursor, cursor);
+    });
+  };
 
   const insertFormatting = (kind: "bold" | "italic" | "bullet" | "numbered" | "inlineMath" | "displayMath") => {
     const textarea = textareaRef.current;
@@ -81,6 +115,39 @@ export function QuizMarkdownEditor({ value, onChange, placeholder, minHeight = "
           {preview ? "Edit" : "Preview"}
         </Button>
       </div>
+      {enableImageInsert && (
+        <div className="grid gap-2 border-b p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-end">
+          <label className="grid gap-1 text-sm font-medium">
+            Image URL
+            <Input
+              type="url"
+              value={imageUrl}
+              onChange={(event) => setImageUrl(event.target.value)}
+              placeholder="https://example.com/diagram.png"
+              aria-label="Image URL to insert"
+            />
+          </label>
+          <label className="grid gap-1 text-sm font-medium">
+            Image description
+            <Input
+              value={imageAlt}
+              onChange={(event) => setImageAlt(event.target.value)}
+              placeholder="Describe the image"
+              aria-label="Image description"
+            />
+          </label>
+          <Button
+            type="button"
+            variant="outline"
+            className="gap-2"
+            onClick={insertImage}
+            disabled={preview || !/^https?:\/\//i.test(imageUrl.trim())}
+          >
+            <ImagePlus className="h-4 w-4" />
+            Insert image
+          </Button>
+        </div>
+      )}
       {preview ? (
         <div className={`${minHeight} p-3`}>
           {value.trim() ? <QuizMarkdownContent source={value} /> : <p className="text-sm text-muted-foreground">Nothing to preview yet.</p>}

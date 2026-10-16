@@ -803,10 +803,10 @@ function ModulePanel({ courses, selectedCourseId, chooseCourse, modules, draft, 
           </div>
 
           <Field label="Content">
-            <QuizMarkdownEditor value={draft.content} onChange={(content) => setDraft({ ...draft, content })} placeholder="Write the lesson. Paste lists or LaTeX equations here. Use Markdown image syntax to place an image within the text." minHeight="min-h-56" />
+            <QuizMarkdownEditor value={draft.content} onChange={(content) => setDraft({ ...draft, content })} placeholder="Write the lesson. Paste lists or LaTeX equations here." minHeight="min-h-56" enableImageInsert />
           </Field>
 
-          <Field label="Module image URL (optional)">
+          <Field label="Additional module image URL (optional)">
             <Input
               type="url"
               value={draft.imageUrl}
@@ -815,7 +815,7 @@ function ModulePanel({ courses, selectedCourseId, chooseCourse, modules, draft, 
             />
           </Field>
           <p className="-mt-3 text-sm text-muted-foreground">
-            This image appears with the lesson. To position images inside the explanation, use Markdown syntax: ![Description](image URL).
+            This image appears after the lesson text. Use the image controls in Content to place an image inline.
           </p>
           {draft.imageUrl.trim() && (
             <img src={draft.imageUrl} alt="Module image preview" className="max-h-56 max-w-full rounded-md border object-contain" />

@@ -46,7 +46,7 @@ export function ModuleContent({
       </div>
 
       <div className="px-5 py-6 sm:px-7">
-        <QuizMarkdownContent source={module.content} />
+        <QuizMarkdownContent source={module.content} enableImageLightbox />
 
         {module.imageUrl && (
           <img src={module.imageUrl} alt="" className="mt-6 max-h-80 w-full rounded-md object-cover" />

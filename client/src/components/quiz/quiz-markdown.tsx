@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, type ComponentProps } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
@@ -10,12 +10,67 @@ import { Bold, Eye, ImagePlus, Italic, List, ListOrdered, Pencil, Sigma } from "
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { normalizeMathDelimiters } from "@/lib/quiz-markdown";
 
-export function QuizMarkdownContent({ source, className = "" }: { source: string; className?: string }) {
+function MarkdownImage({ src, alt = "", enableLightbox = false }: ComponentProps<"img"> & { enableLightbox?: boolean }) {
+  const [open, setOpen] = useState(false);
+  if (!src) return null;
+
+  const image = (
+    <img
+      src={src}
+      alt={alt}
+      className="mx-auto block h-auto max-h-[min(75vh,48rem)] max-w-full rounded-md object-contain"
+    />
+  );
+
+  return (
+    <figure className="my-8 block w-full clear-both text-center">
+      {enableLightbox ? (
+        <>
+          <button
+            type="button"
+            className="mx-auto block max-w-full cursor-zoom-in rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            onClick={() => setOpen(true)}
+            aria-label={alt ? `View larger image: ${alt}` : "View larger image"}
+            title="Click to view larger"
+          >
+            {image}
+          </button>
+          <Dialog open={open} onOpenChange={setOpen}>
+            <DialogContent className="max-h-[95vh] max-w-[96vw] border-0 bg-transparent p-2 shadow-none sm:rounded-lg">
+              <img
+                src={src}
+                alt={alt}
+                className="mx-auto block max-h-[88vh] max-w-full rounded-md object-contain"
+              />
+            </DialogContent>
+          </Dialog>
+        </>
+      ) : image}
+    </figure>
+  );
+}
+
+export function QuizMarkdownContent({
+  source,
+  className = "",
+  enableImageLightbox = false,
+}: {
+  source: string;
+  className?: string;
+  enableImageLightbox?: boolean;
+}) {
   return (
     <div className={`prose prose-sm max-w-none break-words text-foreground ${className}`}>
-      <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks, remarkMath]} rehypePlugins={[rehypeRaw, rehypeSanitize, rehypeKatex]}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, remarkBreaks, remarkMath]}
+        rehypePlugins={[rehypeRaw, rehypeSanitize, rehypeKatex]}
+        components={{
+          img: ({ src, alt }) => <MarkdownImage src={src} alt={alt} enableLightbox={enableImageLightbox} />,
+        }}
+      >
         {normalizeMathDelimiters(source)}
       </ReactMarkdown>
     </div>

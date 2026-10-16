@@ -41,11 +41,16 @@ describe("quiz markdown math delimiters", () => {
   });
 
   it("renders Markdown images from HTTP(S) URLs", () => {
-    const html = renderToStaticMarkup(createElement(QuizMarkdownContent, {
-      source: "![Diagram](https://cdn.example.com/diagram.png)",
+    const source = "![Diagram](https://cdn.example.com/diagram.png)";
+    const html = renderToStaticMarkup(createElement(QuizMarkdownContent, { source }));
+    const lightboxHtml = renderToStaticMarkup(createElement(QuizMarkdownContent, {
+      source,
+      enableImageLightbox: true,
     }));
 
+    assert.match(html, /<figure class="my-8 block w-full clear-both text-center">/);
     assert.match(html, /<img[^>]+src="https:\/\/cdn\.example\.com\/diagram\.png"/);
     assert.match(html, /alt="Diagram"/);
+    assert.match(lightboxHtml, /aria-label="View larger image: Diagram"/);
   });
 });

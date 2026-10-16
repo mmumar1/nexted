@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRoute, useLocation } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Navbar } from "@/components/navbar";
@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ChevronLeft, Menu } from "lucide-react";
 import { Link } from "wouter";
-import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerTrigger } from "@/components/ui/drawer";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useAuth } from "@/lib/auth-context";
 import type { Module, Course, ModuleCompletion } from "@shared/schema";
 import { ModuleContent } from "@/components/course/module-content";
@@ -23,6 +23,7 @@ export default function CoursePage() {
   const [, setLocation] = useLocation();
   const { user, isAuthenticated } = useAuth();
   const { toast } = useToast();
+  const [isModuleSheetOpen, setModuleSheetOpen] = useState(false);
   const courseId = moduleParams?.courseId || legacyParams?.id || "1";
   const requestedModuleId = moduleParams?.moduleId;
 
@@ -134,6 +135,7 @@ export default function CoursePage() {
   };
 
   const handleSelectModule = (moduleId: string) => {
+    setModuleSheetOpen(false);
     setLocation(`/course/${courseId}/module/${moduleId}`);
   };
 
@@ -194,36 +196,42 @@ export default function CoursePage() {
 
       {/* Modules */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-          <div>
+        <div className="mb-4 flex items-center justify-between gap-3 lg:mb-6">
+          <div className="hidden lg:block">
             <h2 className="text-2xl font-semibold text-foreground mb-2">Course Modules</h2>
             <p className="text-muted-foreground">Work through each module and complete the quizzes to track your progress</p>
           </div>
-          <Drawer>
-            <DrawerTrigger asChild>
-              <Button variant="outline" className="gap-2 lg:hidden"><Menu className="h-4 w-4" /> Modules</Button>
-            </DrawerTrigger>
-            <DrawerContent>
-              <DrawerHeader><DrawerTitle>Course modules</DrawerTitle></DrawerHeader>
-              <div className="overflow-y-auto px-4 pb-6">
+          <Sheet open={isModuleSheetOpen} onOpenChange={setModuleSheetOpen}>
+            <SheetTrigger asChild>
+              <Button variant="outline" className="gap-2 lg:hidden" aria-label="Open course modules">
+                <Menu className="h-4 w-4" /> Modules
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="left" className="flex w-[min(20rem,85vw)] flex-col gap-4 overflow-y-auto p-4 sm:max-w-sm">
+              <SheetHeader className="pr-8">
+                <SheetTitle>Course modules</SheetTitle>
+              </SheetHeader>
+              <div className="min-h-0 flex-1 overflow-y-auto">
                 <ModuleSidebar modules={modulesWithCompletion} activeModuleId={activeModule?.id} onSelect={handleSelectModule} />
               </div>
-            </DrawerContent>
-          </Drawer>
+            </SheetContent>
+          </Sheet>
         </div>
 
         {modulesLoading ? (
           <div className="grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
-            <Skeleton className="h-80 w-full" />
+            <Skeleton className="hidden h-80 w-full lg:block" />
             <Skeleton className="h-[28rem] w-full" />
           </div>
         ) : activeModule ? (
           <div className="grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
-            <ModuleSidebar
-              modules={modulesWithCompletion}
-              activeModuleId={activeModule.id}
-              onSelect={handleSelectModule}
-            />
+            <div className="hidden lg:block">
+              <ModuleSidebar
+                modules={modulesWithCompletion}
+                activeModuleId={activeModule.id}
+                onSelect={handleSelectModule}
+              />
+            </div>
             {courseCompleted && (
               <div className="rounded-lg border border-chart-3/30 bg-chart-3/10 p-4 text-sm text-foreground lg:col-start-2">
                 You completed this course. Great work.

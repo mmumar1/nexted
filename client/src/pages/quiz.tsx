@@ -120,8 +120,26 @@ function createAchievementImage({ studentName, quizTitle, percentage, passed }: 
   context.fillStyle = "#fbbf24";
   context.font = "600 19px Inter, Arial, sans-serif";
   context.letterSpacing = "5px";
-  context.fillText("LEARNING THAT MOVES YOU FORWARD", 540, 198);
+  context.fillText("LEARNING WITHOUT LIMITS", 540, 198);
   context.letterSpacing = "0px";
+
+  context.save();
+  context.translate(112, 700);
+  context.rotate(-Math.PI / 2);
+  context.fillStyle = "rgba(255, 255, 255, 0.78)";
+  context.font = "600 22px Inter, Arial, sans-serif";
+  context.letterSpacing = "2px";
+  context.fillText("learnpedia.app", 0, 0);
+  context.restore();
+
+  context.save();
+  context.translate(968, 700);
+  context.rotate(Math.PI / 2);
+  context.fillStyle = "rgba(255, 255, 255, 0.78)";
+  context.font = "600 22px Inter, Arial, sans-serif";
+  context.letterSpacing = "2px";
+  context.fillText("learnpedia.app", 0, 0);
+  context.restore();
 
   context.fillStyle = "#fbbf24";
   context.beginPath();
@@ -533,8 +551,8 @@ export default function Quiz() {
 
       {/* Results Modal */}
       <Dialog open={showResults} onOpenChange={setShowResults}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg" data-testid="dialog-quiz-results">
-          <DialogHeader>
+        <DialogContent className="flex max-h-[90dvh] flex-col gap-4 overflow-hidden sm:max-w-lg" data-testid="dialog-quiz-results">
+          <DialogHeader className="shrink-0">
             <DialogTitle className="text-center text-2xl">
               {percentage >= quiz.passScore ? "Your next level starts here" : "Keep moving forward"}
             </DialogTitle>
@@ -543,53 +561,57 @@ export default function Quiz() {
             </DialogDescription>
           </DialogHeader>
 
-          <section
-            aria-label="Achievement card preview"
-            className="relative mx-auto aspect-[4/5] w-full max-w-[340px] overflow-hidden rounded-[1.5rem] border border-white/20 bg-gradient-to-br from-teal-950 via-teal-700 to-slate-900 p-5 text-center text-white shadow-xl"
+          <div
+            className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain pr-1"
+            data-testid="quiz-results-scroll-area"
           >
-            <div className="pointer-events-none absolute -right-16 -top-12 h-48 w-48 rounded-full bg-white/10" />
-            <div className="pointer-events-none absolute -bottom-12 -left-16 h-48 w-48 rounded-full bg-white/10" />
-            <div className="relative flex h-full flex-col items-center">
-              <p className="text-xs font-extrabold tracking-[0.25em]">LEARNPEDIA</p>
-              <p className="mt-1 text-[9px] font-semibold tracking-[0.15em] text-amber-300">LEARNING THAT MOVES YOU FORWARD</p>
-              <div className="mt-5 flex h-14 w-14 items-center justify-center rounded-full bg-amber-400 text-teal-950 shadow-lg">
-                <Trophy className="h-7 w-7" />
+            <section
+              aria-label="Achievement card preview"
+              className="relative mx-auto aspect-[4/5] w-full max-w-[340px] overflow-hidden rounded-[1.5rem] border border-white/20 bg-gradient-to-br from-teal-950 via-teal-700 to-slate-900 p-5 text-center text-white shadow-xl"
+            >
+              <div className="pointer-events-none absolute -right-16 -top-12 h-48 w-48 rounded-full bg-white/10" />
+              <div className="pointer-events-none absolute -bottom-12 -left-16 h-48 w-48 rounded-full bg-white/10" />
+              <div className="relative flex h-full flex-col items-center">
+                <p className="text-xs font-extrabold tracking-[0.25em]">LEARNPEDIA</p>
+                <p className="mt-1 text-[9px] font-semibold tracking-[0.15em] text-amber-300">LEARNING WITHOUT LIMITS</p>
+                <div className="mt-5 flex h-14 w-14 items-center justify-center rounded-full bg-amber-400 text-teal-950 shadow-lg">
+                  <Trophy className="h-7 w-7" />
+                </div>
+                <h2 className="mt-4 text-3xl font-black tracking-tight">LEVEL UP!</h2>
+                <p className="mt-1 text-xs text-white/80">
+                  {percentage >= quiz.passScore ? "Another milestone unlocked" : "Every try moves you forward"}
+                </p>
+                <p className="mt-3 text-6xl font-black leading-none text-amber-300">{percentage}%</p>
+                <p className="mt-1 text-[10px] font-bold tracking-[0.2em] text-white/75">QUIZ SCORE</p>
+                <div className="mt-4 flex min-h-16 w-full flex-1 flex-col justify-center rounded-xl bg-white/10 px-3 py-2">
+                  <p className="text-[9px] font-semibold tracking-[0.15em] text-amber-300">ACHIEVEMENT EARNED BY</p>
+                  <p className="mt-1 line-clamp-2 text-sm font-bold">{user.fullName}</p>
+                  <p className="mt-1 line-clamp-2 text-[10px] text-white/80">{quiz.title}</p>
+                </div>
+                <div className="mt-4 h-1 w-16 rounded-full bg-amber-300" />
+                <p className="mt-2 text-xs font-semibold">learnpedia.app</p>
               </div>
-              <h2 className="mt-4 text-3xl font-black tracking-tight">LEVEL UP!</h2>
-              <p className="mt-1 text-xs text-white/80">
-                {percentage >= quiz.passScore ? "Another milestone unlocked" : "Every try moves you forward"}
-              </p>
-              <p className="mt-3 text-6xl font-black leading-none text-amber-300">{percentage}%</p>
-              <p className="mt-1 text-[10px] font-bold tracking-[0.2em] text-white/75">QUIZ SCORE</p>
-              <div className="mt-4 flex w-full min-h-16 flex-1 flex-col justify-center rounded-xl bg-white/10 px-3 py-2">
-                <p className="text-[9px] font-semibold tracking-[0.15em] text-amber-300">ACHIEVEMENT EARNED BY</p>
-                <p className="mt-1 line-clamp-2 text-sm font-bold">{user.fullName}</p>
-                <p className="mt-1 line-clamp-2 text-[10px] text-white/80">{quiz.title}</p>
-              </div>
-              <div className="mt-4 h-1 w-16 rounded-full bg-amber-300" />
-              <p className="mt-2 text-xs font-semibold">learnpedia.app</p>
+            </section>
+
+            <div className="grid grid-cols-2 gap-2">
+              <Button onClick={() => void exportAchievement(false)} disabled={isSharing} variant="secondary">
+                <Download className="mr-2 h-4 w-4" />
+                Download card
+              </Button>
+              <Button onClick={() => void exportAchievement(true)} disabled={isSharing}>
+                <Share2 className="mr-2 h-4 w-4" />
+                {isSharing ? "Preparing..." : "Share achievement"}
+              </Button>
             </div>
-          </section>
 
-          <div className="grid grid-cols-2 gap-2">
-            <Button onClick={() => void exportAchievement(false)} disabled={isSharing} variant="secondary">
-              <Download className="mr-2 h-4 w-4" />
-              Download card
-            </Button>
-            <Button onClick={() => void exportAchievement(true)} disabled={isSharing}>
-              <Share2 className="mr-2 h-4 w-4" />
-              {isSharing ? "Preparing..." : "Share achievement"}
-            </Button>
-          </div>
-
-          <Accordion type="single" collapsible className="border-t pt-1">
-            <AccordionItem value="answer-review" className="border-b-0">
-              <AccordionTrigger className="py-3 text-left font-semibold hover:no-underline">
-                Review questions and answers
-              </AccordionTrigger>
-              <AccordionContent>
-                <div className="space-y-3">
-                  {quiz.questions.map((question, index) => {
+            <Accordion type="single" collapsible className="border-t pt-1">
+              <AccordionItem value="answer-review" className="border-b-0">
+                <AccordionTrigger className="py-3 text-left font-semibold hover:no-underline">
+                  Review questions and answers
+                </AccordionTrigger>
+                <AccordionContent>
+                  <div className="space-y-3">
+                    {quiz.questions.map((question, index) => {
                     const selectedOption = answers[question.id];
                     const isCorrect = selectedOption === question.correctAnswer;
 
@@ -667,13 +689,14 @@ export default function Quiz() {
                         </div>
                       </section>
                     );
-                  })}
-                </div>
-              </AccordionContent>
-            </AccordionItem>
-          </Accordion>
+                    })}
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
+          </div>
 
-          <DialogFooter className="flex-col sm:flex-row gap-2">
+          <DialogFooter className="shrink-0 flex-col gap-2 bg-background pt-2 sm:flex-row">
             <Button
               variant="secondary"
               onClick={handleRetry}

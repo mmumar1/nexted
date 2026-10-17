@@ -2,15 +2,7 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Bell, BookOpen, CalendarClock, FolderKanban, LayoutDashboard, LogOut, Medal, Menu, MessageCircle, Moon, Sun } from "lucide-react";
 import { Link, useLocation } from "wouter";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Sheet, SheetClose, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
@@ -73,12 +65,6 @@ export function Navbar() {
   const staffNavItems = user?.role && ["admin", "super_admin", "instructor"].includes(user.role)
     ? [...navItems, { href: "/admin", label: "Admin CMS", icon: LayoutDashboard }]
     : navItems;
-  const initials = userName
-    .split(" ")
-    .map((name) => name[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2);
   const activeTier = leaderboard?.tiers?.find((tier) => tier.id === leaderboard.tier);
 
   return (
@@ -245,14 +231,16 @@ export function Navbar() {
 
             <Sheet>
               <SheetTrigger asChild>
-                <Button variant="ghost" size="icon" className="max-[380px]:h-9 max-[380px]:w-9 md:hidden" aria-label="Open navigation menu">
+                <Button variant="ghost" size="icon" className="max-[380px]:h-9 max-[380px]:w-9" aria-label="Open navigation menu">
                   <Menu className="h-5 w-5" />
                 </Button>
               </SheetTrigger>
               <SheetContent side="left" className="w-[min(20rem,85vw)] overflow-y-auto">
                 <SheetHeader>
                   <SheetTitle>Menu</SheetTitle>
-                  <SheetDescription>Navigate your learning workspace.</SheetDescription>
+                  <SheetDescription>
+                    {userName} · {user?.role || "Student"} account
+                  </SheetDescription>
                 </SheetHeader>
                 <nav className="mt-6 space-y-1">
                   {staffNavItems.map((item) => {
@@ -305,37 +293,20 @@ export function Navbar() {
                     aria-label="Toggle dark mode"
                   />
                 </div>
+                <div className="my-5 border-t" />
+                <SheetClose asChild>
+                  <Button
+                    variant="ghost"
+                    onClick={handleLogout}
+                    className="w-full justify-start text-destructive hover:text-destructive"
+                    data-testid="button-logout"
+                  >
+                    <LogOut className="mr-3 h-4 w-4" />
+                    Logout
+                  </Button>
+                </SheetClose>
               </SheetContent>
             </Sheet>
-
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="gap-2 max-[380px]:h-9 max-[380px]:w-9 max-[380px]:gap-0 max-[380px]:p-0" data-testid="button-user-menu" aria-label="Open profile menu">
-                  <Avatar className="h-8 w-8 max-[380px]:h-7 max-[380px]:w-7">
-                    <AvatarFallback className="bg-primary text-xs text-primary-foreground">{initials}</AvatarFallback>
-                  </Avatar>
-                  <span className="hidden text-sm font-medium sm:inline-block">{userName}</span>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <div className="px-2 py-1.5">
-                  <p className="text-sm font-medium">{userName}</p>
-                  <p className="text-xs text-muted-foreground">{user?.role || "Student"} account</p>
-                </div>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem asChild>
-                  <Link href="/profile"><span className="w-full">Profile &amp; settings</span></Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={handleLogout}
-                  className="cursor-pointer text-destructive focus:text-destructive"
-                  data-testid="button-logout"
-                >
-                  <LogOut className="mr-2 h-4 w-4" />
-                  Logout
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
           </div>
         </div>
       </div>

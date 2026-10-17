@@ -17,7 +17,7 @@ import { mapSupabaseProfileToUser } from "@/lib/auth-utils";
 interface ProfileForm { fullName: string; email: string }
 
 export default function Profile() {
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
   const { user, login, isAuthenticated } = useAuth();
   const { toast } = useToast();
   const [couponCode, setCouponCode] = useState("");
@@ -28,6 +28,15 @@ export default function Profile() {
   useEffect(() => {
     if (!isAuthenticated) setLocation("/login");
   }, [isAuthenticated, setLocation]);
+
+  useEffect(() => {
+    const targetId = window.location.hash.slice(1);
+    if (!targetId) return;
+
+    window.requestAnimationFrame(() => {
+      document.getElementById(decodeURIComponent(targetId))?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }, [location]);
 
   const updateMutation = useMutation({
     mutationFn: (data: ProfileForm) => apiRequest("PATCH", `/api/users/${user?.id}`, data),
@@ -114,10 +123,10 @@ export default function Profile() {
               </div>
               {!user.hasActiveSubscription && (
                 <>
-                  <Button type="button" variant="secondary" className="w-full" onClick={() => paymentMutation.mutate()} disabled={paymentMutation.isPending}>
+                  <Button id="payment-options" type="button" variant="secondary" className="w-full" onClick={() => paymentMutation.mutate()} disabled={paymentMutation.isPending}>
                     {paymentMutation.isPending ? "Opening Paystack..." : "Pay with Paystack"}
                   </Button>
-                  <form className="space-y-2 border-t pt-4" onSubmit={(event) => { event.preventDefault(); redeemCouponMutation.mutate(); }}>
+                  <form id="coupon-code" className="space-y-2 border-t pt-4" onSubmit={(event) => { event.preventDefault(); redeemCouponMutation.mutate(); }}>
                     <Label htmlFor="subscription-coupon">Discount code</Label>
                     <Input id="subscription-coupon" value={couponCode} onChange={(event) => setCouponCode(event.target.value)} placeholder="Enter coupon code" autoCapitalize="characters" />
                     <Button type="submit" variant="outline" className="w-full" disabled={!couponCode.trim() || redeemCouponMutation.isPending}>

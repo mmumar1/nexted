@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useEffect } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Navbar } from "@/components/navbar";
@@ -8,7 +8,7 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Lock, Play, BookOpen, Trophy, CheckCircle2, Bell, CalendarClock, Medal } from "lucide-react";
+import { Lock, Play, BookOpen, Trophy, CheckCircle2, Bell, Medal } from "lucide-react";
 import { Link } from "wouter";
 import { useAuth } from "@/lib/auth-context";
 import { apiRequest } from "@/lib/queryClient";
@@ -282,13 +282,7 @@ export default function Dashboard() {
 }
 
 function DashboardSidebar({ leaderboard }: { leaderboard?: LeaderboardStatus }) {
-  const [now, setNow] = useState(() => new Date());
   const { data: announcements = [] } = useQuery<AnnouncementRecord[]>({ queryKey: ["/api/announcements"] });
-
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(new Date()), 1000);
-    return () => window.clearInterval(timer);
-  }, []);
 
   const activeTier = leaderboard?.tier || "bronze";
   const tierStyles: Record<LeaderboardTier["id"], string> = {
@@ -304,8 +298,8 @@ function DashboardSidebar({ leaderboard }: { leaderboard?: LeaderboardStatus }) 
   ];
 
   return (
-    <aside className="space-y-5 lg:sticky lg:top-24 lg:self-start">
-      <Card>
+    <aside className="hidden space-y-5 lg:sticky lg:top-24 lg:block lg:self-start">
+      <Card className="hidden lg:block">
         <CardHeader className="pb-3">
           <div className="flex items-center gap-2">
             <Bell className="h-4 w-4 text-primary" />
@@ -340,20 +334,7 @@ function DashboardSidebar({ leaderboard }: { leaderboard?: LeaderboardStatus }) 
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex items-center gap-2">
-            <CalendarClock className="h-4 w-4 text-primary" />
-            <CardTitle className="text-base">Today</CardTitle>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <p className="text-2xl font-semibold tabular-nums">{now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>
-          <p className="mt-1 text-sm text-muted-foreground">{now.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric", year: "numeric" })}</p>
-        </CardContent>
-      </Card>
-
-      <Card>
+      <Card className="hidden lg:block">
         <CardHeader className="pb-3">
           <div className="flex items-center gap-2">
             <Medal className="h-4 w-4 text-primary" />

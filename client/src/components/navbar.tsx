@@ -246,24 +246,7 @@ export function Navbar() {
                     {userName} · {user?.role || "Student"} account
                   </SheetDescription>
                 </SheetHeader>
-                <nav className="mt-6 space-y-1">
-                  {staffNavItems.map((item) => {
-                    const Icon = item.icon;
-                    return (
-                      <SheetClose key={item.href} asChild>
-                        <Link
-                          href={item.href}
-                          className={`flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground ${location === item.href ? "bg-accent text-accent-foreground" : ""}`}
-                        >
-                          <Icon className="h-4 w-4" />
-                          {item.label}
-                        </Link>
-                      </SheetClose>
-                    );
-                  })}
-                </nav>
-                <div className="my-5 border-t" />
-                <div className="space-y-1">
+                <div className="my-5 space-y-1">
                   <p className="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Learning</p>
                   <SheetClose asChild>
                     <Link
@@ -287,6 +270,23 @@ export function Navbar() {
                   </SheetClose>
                 </div>
                 <div className="my-5 border-t" />
+                <nav className="mt-6 space-y-1">
+                  {staffNavItems.map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <SheetClose key={item.href} asChild>
+                        <Link
+                          href={item.href}
+                          className={`flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground ${location === item.href ? "bg-accent text-accent-foreground" : ""}`}
+                        >
+                          <Icon className="h-4 w-4" />
+                          {item.label}
+                        </Link>
+                      </SheetClose>
+                    );
+                  })}
+                </nav>
+                <div className="my-5 border-t" />
                 <div className="space-y-1">
                   <p className="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Account</p>
                   <SheetClose asChild>
@@ -294,20 +294,16 @@ export function Navbar() {
                       Profile &amp; settings
                     </Link>
                   </SheetClose>
-                  {!user?.hasActiveSubscription && (
-                    <>
-                      <SheetClose asChild>
-                        <Link href="/profile#payment-options" className="block rounded-md px-3 py-2.5 text-sm font-medium hover:bg-accent">
-                          Payment
-                        </Link>
-                      </SheetClose>
-                      <SheetClose asChild>
-                        <Link href="/profile#coupon-code" className="block rounded-md px-3 py-2.5 text-sm font-medium hover:bg-accent">
-                          Redeem a coupon
-                        </Link>
-                      </SheetClose>
-                    </>
-                  )}
+                  <SheetClose asChild>
+                    <Link href="/profile#payment-options" className="block rounded-md px-3 py-2.5 text-sm font-medium hover:bg-accent">
+                      Payment
+                    </Link>
+                  </SheetClose>
+                  <SheetClose asChild>
+                    <Link href="/profile#coupon-code" className="block rounded-md px-3 py-2.5 text-sm font-medium hover:bg-accent">
+                      Redeem a coupon
+                    </Link>
+                  </SheetClose>
                 </div>
                 <div className="my-5 border-t" />
                 <div className="flex items-center justify-between px-3 py-2">

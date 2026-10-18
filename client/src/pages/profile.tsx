@@ -121,7 +121,16 @@ export default function Profile() {
                   {user.hasActiveSubscription ? user.subscriptionTier || "one-time" : "none"}
                 </Badge>
               </div>
-              {!user.hasActiveSubscription && (
+              {user.hasActiveSubscription ? (
+                <>
+                  <div id="payment-options" className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+                    Your subscription is active. No additional payment is needed.
+                  </div>
+                  <div id="coupon-code" className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+                    Coupon redemption is unavailable while your subscription is active.
+                  </div>
+                </>
+              ) : (
                 <>
                   <Button id="payment-options" type="button" variant="secondary" className="w-full" onClick={() => paymentMutation.mutate()} disabled={paymentMutation.isPending}>
                     {paymentMutation.isPending ? "Opening Paystack..." : "Pay with Paystack"}

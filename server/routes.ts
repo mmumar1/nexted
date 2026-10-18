@@ -335,13 +335,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const secretKey = process.env.PAYSTACK_SECRET_KEY;
     const amount = Number(process.env.PAYSTACK_PLAN_AMOUNT || "200000");
     const isProduction = process.env.NODE_ENV === "production";
-    const callbackUrl = process.env.PAYSTACK_CALLBACK_URL || (isProduction ? "" : "http://localhost:5000/profile");
+    const vercelHostname = process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.VERCEL_URL;
+    const callbackUrl = process.env.PAYSTACK_CALLBACK_URL
+      || (isProduction && vercelHostname ? `https://${vercelHostname}/profile` : undefined)
+      || (isProduction ? "" : "http://localhost:5000/profile");
     if (!secretKey || secretKey.includes("replace_with")) {
       throw new Error("Paystack server configuration is missing");
     }
     if (!Number.isInteger(amount) || amount <= 0) throw new Error("PAYSTACK_PLAN_AMOUNT must be a positive integer in kobo");
-    if (!callbackUrl || (isProduction && new URL(callbackUrl).protocol !== "https:")) {
-      throw new Error("PAYSTACK_CALLBACK_URL must be an HTTPS URL in production");
+    let parsedCallbackUrl: URL;
+    try {
+      parsedCallbackUrl = new URL(callbackUrl);
+    } catch {
+      throw new Error("PAYSTACK_CALLBACK_URL must be a valid URL");
+    }
+    if (isProduction && parsedCallbackUrl.protocol !== "https:") {
+      throw new Error("PAYSTACK_CALLBACK_URL must be an HTTPS URL in production; configure it or deploy with a Vercel hostname");
     }
     return { secretKey, amount, callbackUrl };
   };

@@ -40,7 +40,7 @@ PAYSTACK_CALLBACK_URL=https://your-production-domain.example/profile
 
 Never place `SUPABASE_SERVICE_ROLE_KEY` or `PAYSTACK_SECRET_KEY` in a `VITE_` variable.
 
-Use a real Paystack test secret for testing, then replace it with the live secret when enabling production payments. Set `PAYSTACK_CALLBACK_URL` to the deployed Profile URL. This redirect only returns the learner to the app; it does not prove payment. The webhook is the authority that activates access.
+On Vercel, `PAYSTACK_CALLBACK_URL` can be omitted: the server derives the HTTPS Profile URL from Vercel's production hostname (or deployment hostname for previews). Set it explicitly if your app uses a different public URL. On other production hosts, set it to your deployed HTTPS Profile URL. Use a real Paystack test secret for testing, then replace it with the live secret when enabling production payments. This redirect only returns the learner to the app; it does not prove payment. The webhook is the authority that activates access.
 
 ## Database migration
 

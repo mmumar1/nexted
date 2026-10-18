@@ -141,8 +141,9 @@ SUPABASE_ANON_KEY=your-anon-public-key
 SUPABASE_SERVICE_ROLE_KEY=your-server-only-service-role-key
 PAYSTACK_SECRET_KEY=sk_live_or_sk_test_your-secret
 PAYSTACK_PLAN_AMOUNT=100000
-PAYSTACK_CALLBACK_URL=https://your-project.vercel.app/profile
 ```
+
+`PAYSTACK_CALLBACK_URL` is optional on Vercel: the server builds the HTTPS Profile URL from Vercel's production hostname, or the deployment hostname for previews. Set it explicitly if you use a different public URL. Other production hosts must provide this variable as an HTTPS URL.
 
 The Supabase URL and anon key are public client configuration. The Vite build explicitly maps the unprefixed names to the client's `import.meta.env` values; alternatively, retain the `VITE_` names. Mark these two values as **Config** in Vercel, not Sensitive. Keep service keys without a `VITE_` prefix and private. Do not upload `.env.local`. Configure these Supabase redirect URLs for password reset:
 

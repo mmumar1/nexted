@@ -1,10 +1,32 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { parseQuizCsv } from "./quiz-csv";
+import { isInitialEmptyQuizQuestion, parseQuizCsv } from "./quiz-csv";
 
 const headers = "question,option_a,option_b,option_c,option_d,correct_answer,explanation,question_image_url,explanation_image_url";
 
 describe("quiz CSV import", () => {
+  it("replaces the untouched quiz-builder question placeholder", () => {
+    assert.equal(isInitialEmptyQuizQuestion({
+      id: "draft",
+      question: "",
+      questionImageUrl: "",
+      explanation: "",
+      explanationImageUrl: "",
+      options: ["", "", "", ""],
+      correctAnswer: "1",
+    }), true);
+
+    assert.equal(isInitialEmptyQuizQuestion({
+      id: "draft",
+      question: "A question already entered",
+      questionImageUrl: "",
+      explanation: "",
+      explanationImageUrl: "",
+      options: ["A", "B", "C", "D"],
+      correctAnswer: "1",
+    }), false);
+  });
+
   it("parses valid questions with letter or numeric answer keys", () => {
     const csv = [
       headers,

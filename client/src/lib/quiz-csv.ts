@@ -20,6 +20,15 @@ export interface QuizCsvPreview {
   issues: QuizCsvIssue[];
 }
 
+export function isInitialEmptyQuizQuestion(question: ImportedQuizQuestion): boolean {
+  return !question.question.trim()
+    && !question.questionImageUrl.trim()
+    && !question.explanation.trim()
+    && !question.explanationImageUrl.trim()
+    && question.options.every((option) => !option.trim())
+    && question.correctAnswer === "1";
+}
+
 const requiredHeaders = ["question", "option_a", "option_b", "option_c", "option_d", "correct_answer"];
 const optionalHeaders = ["explanation", "question_image_url", "explanation_image_url"];
 const supportedHeaders = [...requiredHeaders, ...optionalHeaders];

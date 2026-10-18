@@ -17,7 +17,7 @@ import { QuizMarkdownEditor } from "@/components/quiz/quiz-markdown";
 import type { AnnouncementRecord } from "@/lib/announcements";
 import type { Course, Module, QuizQuestion, User } from "@shared/schema";
 import { BarChart3, BookOpen, Download, FileQuestion, FileUp, LayoutDashboard, Plus, Settings2, Trash2, UserRound, Users } from "lucide-react";
-import { parseQuizCsv, type QuizCsvPreview } from "@/lib/quiz-csv";
+import { isInitialEmptyQuizQuestion, parseQuizCsv, type QuizCsvPreview } from "@/lib/quiz-csv";
 
 type Section = "overview" | "courses" | "modules" | "quizzes" | "users" | "enrollments" | "analytics" | "announcements";
 
@@ -992,10 +992,13 @@ function QuizPanel({ courses, selectedCourseId, chooseCourse, modules, quizzes, 
 
   const appendImportedQuestions = () => {
     if (!csvPreview || csvPreview.issues.length > 0 || csvPreview.questions.length === 0) return;
+    const existingQuestions = draft.questions.length === 1 && isInitialEmptyQuizQuestion(draft.questions[0])
+      ? []
+      : draft.questions;
     setDraft({
       ...draft,
       questions: [
-        ...draft.questions,
+        ...existingQuestions,
         ...csvPreview.questions,
       ],
     });

@@ -15,6 +15,7 @@ import Profile from "@/pages/profile";
 import Admin from "@/pages/admin-cms";
 import ForgotPassword from "@/pages/forgot-password";
 import ResetPassword from "@/pages/reset-password";
+import LearningPlaceholder from "@/pages/learning-placeholder";
 
 function Router() {
   return (
@@ -30,6 +31,8 @@ function Router() {
       <Route path="/course/:id" component={Course} />
       <Route path="/quiz/:moduleId" component={Quiz} />
       <Route path="/projects" component={Projects} />
+      <Route path="/events" component={() => <LearningPlaceholder feature="events" />} />
+      <Route path="/cbt" component={() => <LearningPlaceholder feature="cbt" />} />
       <Route path="/profile" component={Profile} />
       <Route path="/admin" component={Admin} />
       <Route path="/courses" component={Dashboard} />

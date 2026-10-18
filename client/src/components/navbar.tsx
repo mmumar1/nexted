@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Bell, BookOpen, CalendarClock, FolderKanban, LayoutDashboard, LogOut, Medal, Menu, MessageCircle, Moon, Sun } from "lucide-react";
+import { Bell, BookOpen, CalendarClock, CalendarDays, ClipboardList, FolderKanban, LayoutDashboard, LogOut, Medal, Menu, MessageCircle, Moon, Sun } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -262,6 +262,30 @@ export function Navbar() {
                     );
                   })}
                 </nav>
+                <div className="my-5 border-t" />
+                <div className="space-y-1">
+                  <p className="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Learning</p>
+                  <SheetClose asChild>
+                    <Link
+                      href="/events"
+                      className={`flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground ${location === "/events" ? "bg-accent text-accent-foreground" : ""}`}
+                      data-testid="link-events"
+                    >
+                      <CalendarDays className="h-4 w-4" />
+                      Events
+                    </Link>
+                  </SheetClose>
+                  <SheetClose asChild>
+                    <Link
+                      href="/cbt"
+                      className={`flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground ${location === "/cbt" ? "bg-accent text-accent-foreground" : ""}`}
+                      data-testid="link-cbt"
+                    >
+                      <ClipboardList className="h-4 w-4" />
+                      CBT practice
+                    </Link>
+                  </SheetClose>
+                </div>
                 <div className="my-5 border-t" />
                 <div className="space-y-1">
                   <p className="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Account</p>

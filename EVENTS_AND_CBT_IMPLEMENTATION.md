@@ -1,12 +1,15 @@
 # Events and CBT Implementation Specification
 
-This document captures the planned Events and JAMB-style CBT features. The current application change adds menu navigation and placeholder pages only; event management, notifications, calendar integration, question authoring, and test delivery are not implemented yet.
+This document captures the planned Events and JAMB-style CBT features. The current application adds student-menu navigation and placeholder pages, plus separate Events and CBT question-bank entry points in Admin CMS. Event management, notifications, calendar integration, question authoring, and test delivery are not implemented yet.
 
 ## Navigation delivered now
 
 - Add **Events** and **CBT practice** to the authenticated navigation menu.
 - `/events` and `/cbt` open clear placeholder pages rather than 404s.
 - Keep these actions separate from Profile & settings and from the existing course quiz experience.
+- Admin CMS provides separate **Events** and **CBT question bank** sections on desktop navigation and the mobile section selector.
+- The Admin CMS sections explain the planned scope but do not expose nonfunctional create/edit controls.
+- Preserve the existing course quiz builder and its workflow; CBT question authoring must be implemented separately.
 
 ## Events
 

@@ -16,10 +16,10 @@ import { supabase } from "@/lib/supabase";
 import { QuizMarkdownEditor } from "@/components/quiz/quiz-markdown";
 import type { AnnouncementRecord } from "@/lib/announcements";
 import type { Course, Module, QuizQuestion, User } from "@shared/schema";
-import { BarChart3, BookOpen, Download, FileQuestion, FileUp, LayoutDashboard, Plus, Settings2, Trash2, UserRound, Users } from "lucide-react";
+import { BarChart3, BookOpen, CalendarDays, ClipboardList, Download, FileQuestion, FileUp, LayoutDashboard, Plus, Settings2, Trash2, UserRound, Users } from "lucide-react";
 import { isInitialEmptyQuizQuestion, parseQuizCsv, type QuizCsvPreview } from "@/lib/quiz-csv";
 
-type Section = "overview" | "courses" | "modules" | "quizzes" | "users" | "enrollments" | "analytics" | "announcements";
+type Section = "overview" | "courses" | "modules" | "quizzes" | "events" | "cbt" | "users" | "enrollments" | "analytics" | "announcements";
 
 interface QuizRecord {
   id: string;
@@ -71,6 +71,8 @@ const navItems: Array<{ id: Section; label: string; icon: typeof LayoutDashboard
   { id: "courses", label: "Courses", icon: BookOpen },
   { id: "modules", label: "Modules", icon: Settings2 },
   { id: "quizzes", label: "Quizzes", icon: FileQuestion },
+  { id: "events", label: "Events", icon: CalendarDays },
+  { id: "cbt", label: "CBT question bank", icon: ClipboardList },
   { id: "users", label: "Users", icon: UserRound },
   { id: "enrollments", label: "Enrollments", icon: Users },
   { id: "analytics", label: "Analytics", icon: BarChart3 },
@@ -79,7 +81,7 @@ const navItems: Array<{ id: Section; label: string; icon: typeof LayoutDashboard
 
 const isStaffRole = (role?: string | null) => ["admin", "super_admin", "instructor"].includes(role || "");
 const isSuperAdmin = (role?: string | null) => ["admin", "super_admin"].includes(role || "");
-const sections = new Set<Section>(["overview", "courses", "modules", "quizzes", "users", "enrollments", "analytics", "announcements"]);
+const sections = new Set<Section>(["overview", "courses", "modules", "quizzes", "events", "cbt", "users", "enrollments", "analytics", "announcements"]);
 
 function createEmptyQuizQuestion(): QuizQuestionDraft {
   return { id: crypto.randomUUID(), question: "", questionImageUrl: "", explanation: "", explanationImageUrl: "", options: ["", "", "", ""], correctAnswer: "1" };
@@ -697,6 +699,22 @@ export default function AdminCms() {
               onSave={() => saveQuiz.mutate()}
               onDelete={(id: string) => deleteQuiz.mutate(id)}
               pending={saveQuiz.isPending}
+            />
+          )}
+
+          {section === "events" && (
+            <PlannedFeaturePanel
+              title="Events"
+              description="Create and publish events for students independently from course quizzes."
+              details="The event tools will include scheduling, course or student audience selection, publishing, calendar support, and notifications."
+            />
+          )}
+
+          {section === "cbt" && (
+            <PlannedFeaturePanel
+              title="CBT question bank"
+              description="Build JAMB-style mock test content separately from the existing course quiz builder."
+              details="The CBT tools will include subject and exam-year tagging, question authoring, draft and publish states, and question-bank readiness counts."
             />
           )}
 
@@ -1448,5 +1466,28 @@ function AnnouncementPanel({
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function PlannedFeaturePanel({
+  title,
+  description,
+  details,
+}: {
+  title: string;
+  description: string;
+  details: string;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+        <CardDescription>{description}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <p className="text-sm text-muted-foreground">{details}</p>
+        <p className="mt-4 text-sm font-medium">Creation and management tools are planned and are not available yet.</p>
+      </CardContent>
+    </Card>
   );
 }

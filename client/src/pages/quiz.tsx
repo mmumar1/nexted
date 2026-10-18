@@ -571,6 +571,18 @@ export default function Quiz() {
             >
               <div className="pointer-events-none absolute -right-16 -top-12 h-48 w-48 rounded-full bg-white/10" />
               <div className="pointer-events-none absolute -bottom-12 -left-16 h-48 w-48 rounded-full bg-white/10" />
+              <span
+                className="absolute left-2 top-1/2 -translate-y-1/2 -rotate-180 text-[9px] font-semibold tracking-[0.12em] text-white/80"
+                style={{ writingMode: "vertical-rl" }}
+              >
+                learnpedia.app
+              </span>
+              <span
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] font-semibold tracking-[0.12em] text-white/80"
+                style={{ writingMode: "vertical-rl" }}
+              >
+                learnpedia.app
+              </span>
               <div className="relative flex h-full flex-col items-center">
                 <p className="text-xs font-extrabold tracking-[0.25em]">LEARNPEDIA</p>
                 <p className="mt-1 text-[9px] font-semibold tracking-[0.15em] text-amber-300">LEARNING WITHOUT LIMITS</p>

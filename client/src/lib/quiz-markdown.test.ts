@@ -24,6 +24,15 @@ describe("quiz markdown math delimiters", () => {
     assert.match(html, /<li>Second<\/li>/);
   });
 
+  it("uses dark-mode typography colors for markdown headings", () => {
+    const html = renderToStaticMarkup(createElement(QuizMarkdownContent, {
+      source: "## Explanation heading\n\nImportant details.",
+    }));
+
+    assert.match(html, /dark:prose-invert/);
+    assert.match(html, /<h2[^>]*>Explanation heading<\/h2>/);
+  });
+
   it("sanitizes active HTML", () => {
     const html = renderToStaticMarkup(createElement(QuizMarkdownContent, {
       source: "<script>alert('x')</script><img src=x onerror=alert(1)>",

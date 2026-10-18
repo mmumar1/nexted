@@ -16,7 +16,8 @@ import { supabase } from "@/lib/supabase";
 import { QuizMarkdownEditor } from "@/components/quiz/quiz-markdown";
 import type { AnnouncementRecord } from "@/lib/announcements";
 import type { Course, Module, QuizQuestion, User } from "@shared/schema";
-import { BarChart3, BookOpen, FileQuestion, LayoutDashboard, Plus, Settings2, Trash2, UserRound, Users } from "lucide-react";
+import { BarChart3, BookOpen, Download, FileQuestion, FileUp, LayoutDashboard, Plus, Settings2, Trash2, UserRound, Users } from "lucide-react";
+import { parseQuizCsv, type QuizCsvPreview } from "@/lib/quiz-csv";
 
 type Section = "overview" | "courses" | "modules" | "quizzes" | "users" | "enrollments" | "analytics" | "announcements";
 
@@ -938,6 +939,9 @@ function ModulePanel({ courses, selectedCourseId, chooseCourse, modules, draft, 
 }
 
 function QuizPanel({ courses, selectedCourseId, chooseCourse, modules, quizzes, draft, setDraft, editingQuizId, onEdit, onCancelEdit, onSave, onDelete, pending }: any) {
+  const [csvPreview, setCsvPreview] = useState<QuizCsvPreview | null>(null);
+  const [csvFileName, setCsvFileName] = useState("");
+
   const updateQuestion = (index: number, update: Partial<QuizQuestionDraft>) => {
     setDraft({
       ...draft,
@@ -945,6 +949,58 @@ function QuizPanel({ courses, selectedCourseId, chooseCourse, modules, quizzes, 
         questionIndex === index ? { ...question, ...update } : question,
       ),
     });
+  };
+
+  const handleCsvFile = async (file?: File) => {
+    setCsvPreview(null);
+    setCsvFileName(file?.name || "");
+    if (!file) return;
+
+    if (file.size > 1024 * 1024) {
+      setCsvPreview({
+        questions: [],
+        issues: [{ row: 1, message: "CSV files must be 1 MB or smaller." }],
+      });
+      return;
+    }
+
+    try {
+      setCsvPreview(parseQuizCsv(await file.text()));
+    } catch (error) {
+      setCsvPreview({
+        questions: [],
+        issues: [{
+          row: 1,
+          message: error instanceof Error ? `Could not read CSV: ${error.message}` : "Could not read this CSV file.",
+        }],
+      });
+    }
+  };
+
+  const downloadCsvTemplate = () => {
+    const template = [
+      "question,option_a,option_b,option_c,option_d,correct_answer,explanation,question_image_url,explanation_image_url",
+      '"What is 2 + 2?","3","4","5","6","B","Basic addition","",""',
+    ].join("\r\n");
+    const url = URL.createObjectURL(new Blob([template], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "learnpedia-quiz-questions-template.csv";
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  const appendImportedQuestions = () => {
+    if (!csvPreview || csvPreview.issues.length > 0 || csvPreview.questions.length === 0) return;
+    setDraft({
+      ...draft,
+      questions: [
+        ...draft.questions,
+        ...csvPreview.questions,
+      ],
+    });
+    setCsvPreview(null);
+    setCsvFileName("");
   };
 
   return (
@@ -973,6 +1029,89 @@ function QuizPanel({ courses, selectedCourseId, chooseCourse, modules, quizzes, 
           <Field label="Passing score (%)">
             <Input type="number" min="1" max="100" value={draft.passScore} onChange={(e) => setDraft({ ...draft, passScore: e.target.value })} />
           </Field>
+
+          <section className="space-y-3 rounded-lg border bg-muted/20 p-4" aria-label="Import questions from CSV">
+            <div>
+              <h3 className="font-semibold">Import questions from CSV</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Questions are added to this draft only after every row passes validation. Import never saves or replaces a quiz by itself.
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Required columns: question, option_a through option_d, and correct_answer (A-D or 1-4). Explanations and image URLs are optional. Maximum file size: 1 MB.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={downloadCsvTemplate}>
+                <Download className="mr-2 h-4 w-4" />Download template
+              </Button>
+              <Label
+                htmlFor="quiz-csv-upload"
+                className="inline-flex min-h-8 cursor-pointer items-center justify-center rounded-md border bg-background px-3 text-xs font-medium hover:bg-accent"
+              >
+                <FileUp className="mr-2 h-4 w-4" />Choose CSV
+              </Label>
+              <Input
+                id="quiz-csv-upload"
+                type="file"
+                accept=".csv,text/csv"
+                className="sr-only"
+                onChange={(event) => void handleCsvFile(event.target.files?.[0])}
+              />
+            </div>
+            {csvFileName && <p className="text-xs text-muted-foreground">Selected file: {csvFileName}</p>}
+
+            {csvPreview && (
+              <div className="space-y-3 rounded-md border bg-background p-3" aria-live="polite">
+                {csvPreview.issues.length > 0 ? (
+                  <>
+                    <div>
+                      <p className="font-medium text-destructive">Import blocked: fix all CSV errors before importing.</p>
+                      <p className="text-sm text-muted-foreground">
+                        {csvPreview.questions.length} valid question{csvPreview.questions.length === 1 ? "" : "s"} found, but no questions were added.
+                      </p>
+                    </div>
+                    <ul className="max-h-48 space-y-1 overflow-y-auto text-sm">
+                      {csvPreview.issues.map((issue, index) => (
+                        <li key={`${issue.row}-${index}`} className="text-destructive">
+                          Row {issue.row}: {issue.message}
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <p className="font-medium text-emerald-700 dark:text-emerald-300">
+                        Preview ready: {csvPreview.questions.length} question{csvPreview.questions.length === 1 ? "" : "s"}
+                      </p>
+                      <p className="text-sm text-muted-foreground">All rows passed validation. Confirm to append them to this quiz draft.</p>
+                    </div>
+                    <div className="max-h-56 space-y-2 overflow-y-auto">
+                      {csvPreview.questions.slice(0, 5).map((question, index) => (
+                        <div key={question.id} className="rounded-md border p-2 text-sm">
+                          <p className="font-medium">{index + 1}. {question.question}</p>
+                          <p className="mt-1 text-muted-foreground">
+                            A. {question.options[0]} · B. {question.options[1]} · C. {question.options[2]} · D. {question.options[3]}
+                          </p>
+                          <p className="mt-1 text-xs text-emerald-700 dark:text-emerald-300">
+                            Correct answer: {String.fromCharCode(64 + Number(question.correctAnswer))}
+                          </p>
+                        </div>
+                      ))}
+                      {csvPreview.questions.length > 5 && (
+                        <p className="text-xs text-muted-foreground">
+                          Showing the first 5 of {csvPreview.questions.length} questions.
+                        </p>
+                      )}
+                    </div>
+                    <Button type="button" size="sm" onClick={appendImportedQuestions}>
+                      Add {csvPreview.questions.length} question{csvPreview.questions.length === 1 ? "" : "s"} to draft
+                    </Button>
+                  </>
+                )}
+              </div>
+            )}
+          </section>
 
           <div className="space-y-4">
             {draft.questions.map((question: QuizQuestionDraft, index: number) => (

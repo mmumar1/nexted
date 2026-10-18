@@ -63,7 +63,7 @@ export function QuizMarkdownContent({
   enableImageLightbox?: boolean;
 }) {
   return (
-    <div className={`prose prose-sm max-w-none break-words text-foreground ${className}`}>
+    <div className={`prose prose-sm dark:prose-invert max-w-none break-words text-foreground ${className}`}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkBreaks, remarkMath]}
         rehypePlugins={[rehypeRaw, rehypeSanitize, rehypeKatex]}

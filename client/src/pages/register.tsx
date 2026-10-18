@@ -13,6 +13,7 @@ import { Link } from "wouter";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
+import { WhatsAppFloat } from "@/components/whatsapp-float";
 
 export default function Register() {
   const [, setLocation] = useLocation();
@@ -275,6 +276,7 @@ export default function Register() {
           Join over 1,000+ students learning with Learnpedia.
         </p>
       </div>
+      <WhatsAppFloat />
     </div>
   );
 }

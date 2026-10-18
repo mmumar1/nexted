@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Sheet, SheetClose, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
+import { WhatsAppFloat } from "@/components/whatsapp-float";
 import { useAuth } from "@/lib/auth-context";
 import type { AnnouncementRecord } from "@/lib/announcements";
 import { apiRequest } from "@/lib/queryClient";
@@ -66,6 +67,9 @@ export function Navbar() {
     ? [...navItems, { href: "/admin", label: "Admin CMS", icon: LayoutDashboard }]
     : navItems;
   const activeTier = leaderboard?.tiers?.find((tier) => tier.id === leaderboard.tier);
+  const showWhatsAppButton = ["/dashboard", "/courses", "/projects", "/profile"].includes(location)
+    || location.startsWith("/course/")
+    || location.startsWith("/quiz/");
 
   return (
     <nav className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -310,6 +314,7 @@ export function Navbar() {
           </div>
         </div>
       </div>
+      {showWhatsAppButton && <WhatsAppFloat />}
     </nav>
   );
 }

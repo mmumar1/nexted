@@ -12,6 +12,7 @@ import { Link } from "wouter";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/lib/supabase";
 import { isStaffRole, mapSupabaseProfileToUser } from "@/lib/auth-utils";
+import { WhatsAppFloat } from "@/components/whatsapp-float";
 
 type LoginMode = "student" | "staff";
 
@@ -215,6 +216,7 @@ export default function Login({ initialMode = "student" }: { initialMode?: Login
           Join 1,000+ students learning with Learnpedia
         </p>
       </div>
+      <WhatsAppFloat />
     </div>
   );
 }

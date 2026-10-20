@@ -51,7 +51,7 @@ interface PersistedCmsDraft {
   selectedCourseId: string;
   courseDraft: { title: string; description: string; enrollmentMode: string; instructorId: string; thumbnail: string; isPublished: boolean };
   newCourseDraft: { title: string; description: string; enrollmentMode: string; instructorId: string; thumbnail: string; isPublished: boolean };
-  moduleDraft: { title: string; order: string; content: string; duration: string; parentModuleId: string; prerequisiteModuleId: string; videoUrl: string; imageUrl: string };
+  moduleDraft: { title: string; order: string; content: string; duration: string; parentModuleId: string; prerequisiteModuleId: string; videoUrls?: string[]; videoUrl?: string; imageUrl: string };
   editingModuleId: string | null;
   quizDraft: QuizDraft;
   editingQuizId: string | null;
@@ -121,7 +121,7 @@ export default function AdminCms() {
   const [selectedCourseId, setSelectedCourseId] = useState("");
   const [courseDraft, setCourseDraft] = useState({ title: "", description: "", enrollmentMode: "self", instructorId: "", thumbnail: "", isPublished: false });
   const [newCourseDraft, setNewCourseDraft] = useState({ title: "", description: "", enrollmentMode: "self", instructorId: "", thumbnail: "", isPublished: false });
-  const [moduleDraft, setModuleDraft] = useState({ title: "", order: "1", content: "", duration: "30", parentModuleId: "", prerequisiteModuleId: "", videoUrl: "", imageUrl: "" });
+  const [moduleDraft, setModuleDraft] = useState({ title: "", order: "1", content: "", duration: "30", parentModuleId: "", prerequisiteModuleId: "", videoUrls: [""], imageUrl: "" });
   const [editingModuleId, setEditingModuleId] = useState<string | null>(null);
   const [quizDraft, setQuizDraft] = useState<QuizDraft>({ moduleId: "", title: "", passScore: "70", questions: [createEmptyQuizQuestion()] });
   const [editingQuizId, setEditingQuizId] = useState<string | null>(null);
@@ -145,7 +145,18 @@ export default function AdminCms() {
       if (typeof draft.selectedCourseId === "string") setSelectedCourseId(draft.selectedCourseId);
       if (draft.courseDraft) setCourseDraft((current) => ({ ...current, ...draft.courseDraft }));
       if (draft.newCourseDraft) setNewCourseDraft((current) => ({ ...current, ...draft.newCourseDraft }));
-      if (draft.moduleDraft) setModuleDraft((current) => ({ ...current, ...draft.moduleDraft }));
+      if (draft.moduleDraft) {
+        const restoredModuleDraft = draft.moduleDraft;
+        setModuleDraft((current) => ({
+          ...current,
+          ...restoredModuleDraft,
+          videoUrls: Array.isArray(restoredModuleDraft.videoUrls)
+            ? restoredModuleDraft.videoUrls
+            : restoredModuleDraft.videoUrl
+              ? [restoredModuleDraft.videoUrl]
+              : [""],
+        }));
+      }
       if (draft.editingModuleId !== undefined) setEditingModuleId(draft.editingModuleId);
       if (draft.quizDraft) {
         setQuizDraft({
@@ -300,7 +311,7 @@ export default function AdminCms() {
         thumbnail: course.thumbnail || "",
         isPublished: !!course.isPublished,
       });
-      setModuleDraft({ title: "", order: "1", content: "", duration: "30", parentModuleId: "", prerequisiteModuleId: "", videoUrl: "", imageUrl: "" });
+      setModuleDraft({ title: "", order: "1", content: "", duration: "30", parentModuleId: "", prerequisiteModuleId: "", videoUrls: [""], imageUrl: "" });
       setEditingModuleId(null);
       setQuizDraft({ moduleId: "", title: "", passScore: "70", questions: [createEmptyQuizQuestion()] });
       setEditingQuizId(null);
@@ -321,14 +332,15 @@ export default function AdminCms() {
         duration: Number(moduleDraft.duration),
         parentModuleId: moduleDraft.parentModuleId || null,
         prerequisiteModuleId: moduleDraft.prerequisiteModuleId || null,
-        videoUrl: moduleDraft.videoUrl || null,
+        videoUrls: moduleDraft.videoUrls.map((videoUrl) => videoUrl.trim()).filter(Boolean),
+        videoUrl: moduleDraft.videoUrls.map((videoUrl) => videoUrl.trim()).find(Boolean) || null,
         imageUrl: moduleDraft.imageUrl || null,
       },
     }),
     onSuccess: () => {
       invalidate(["/api/modules/course", selectedCourseId]);
       setEditingModuleId(null);
-      setModuleDraft({ title: "", order: "1", content: "", duration: "30", parentModuleId: "", prerequisiteModuleId: "", videoUrl: "", imageUrl: "" });
+      setModuleDraft({ title: "", order: "1", content: "", duration: "30", parentModuleId: "", prerequisiteModuleId: "", videoUrls: [""], imageUrl: "" });
       toast({ title: editingModuleId ? "Module saved" : "Module created" });
     },
     onError: (error: Error) => toast({ title: "Could not save module", description: error.message, variant: "destructive" }),
@@ -441,7 +453,7 @@ export default function AdminCms() {
   const chooseCourse = (id: string) => {
     setSelectedCourseId(id);
     setEditingModuleId(null);
-    setModuleDraft({ title: "", order: "1", content: "", duration: "30", parentModuleId: "", prerequisiteModuleId: "", videoUrl: "", imageUrl: "" });
+    setModuleDraft({ title: "", order: "1", content: "", duration: "30", parentModuleId: "", prerequisiteModuleId: "", videoUrls: [""], imageUrl: "" });
     setQuizDraft((draft) => ({ ...draft, moduleId: "" }));
     const course = courses.data?.find((item) => item.id === id);
     if (course) {
@@ -864,9 +876,48 @@ function ModulePanel({ courses, selectedCourseId, chooseCourse, modules, draft, 
                 ))}
               </select>
             </Field>
-            <Field label="Video URL">
-              <Input value={draft.videoUrl} onChange={(e) => setDraft({ ...draft, videoUrl: e.target.value })} placeholder="https://..." />
-            </Field>
+            <div className="space-y-2">
+              <Label>Video links (YouTube)</Label>
+              <div className="space-y-3">
+                {draft.videoUrls.map((videoUrl: string, index: number) => (
+                  <div key={index} className="flex min-w-0 items-center gap-2">
+                    <Input
+                      className="min-w-0 flex-1"
+                      type="url"
+                      value={videoUrl}
+                      onChange={(event) => setDraft({
+                        ...draft,
+                        videoUrls: draft.videoUrls.map((value: string, videoIndex: number) => videoIndex === index ? event.target.value : value),
+                      })}
+                      placeholder="https://www.youtube.com/watch?v=..."
+                      aria-label={`YouTube video link ${index + 1}`}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      aria-label={`Remove video link ${index + 1}`}
+                      disabled={draft.videoUrls.length === 1}
+                      onClick={() => setDraft({
+                        ...draft,
+                        videoUrls: draft.videoUrls.filter((_: string, videoIndex: number) => videoIndex !== index),
+                      })}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setDraft({ ...draft, videoUrls: [...draft.videoUrls, ""] })}
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Add video link
+              </Button>
+            </div>
           </div>
 
           <div className="flex flex-wrap gap-3">
@@ -878,7 +929,7 @@ function ModulePanel({ courses, selectedCourseId, chooseCourse, modules, draft, 
                 variant="outline"
                 onClick={() => {
                   setEditingModuleId(null);
-                  setDraft({ title: "", order: "1", content: "", duration: "30", parentModuleId: "", prerequisiteModuleId: "", videoUrl: "", imageUrl: "" });
+                  setDraft({ title: "", order: "1", content: "", duration: "30", parentModuleId: "", prerequisiteModuleId: "", videoUrls: [""], imageUrl: "" });
                 }}
               >
                 Cancel edit
@@ -905,7 +956,7 @@ function ModulePanel({ courses, selectedCourseId, chooseCourse, modules, draft, 
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <p className="font-medium">{module.order}. {module.title}</p>
-                      <p className="text-xs text-muted-foreground">{module.duration} minutes{module.videoUrl ? " · video attached" : ""}</p>
+                      <p className="text-xs text-muted-foreground">{module.duration} minutes{(module.videoUrls?.length || module.videoUrl) ? ` · ${module.videoUrls?.length || 1} video${(module.videoUrls?.length || 1) === 1 ? "" : "s"}` : ""}</p>
                     </div>
                     <Button variant="outline" size="sm" onClick={() => {
                       setEditingModuleId(module.id);
@@ -916,7 +967,7 @@ function ModulePanel({ courses, selectedCourseId, chooseCourse, modules, draft, 
                         duration: String(module.duration),
                         parentModuleId: module.parentModuleId || "",
                         prerequisiteModuleId: module.prerequisiteModuleId || "",
-                        videoUrl: module.videoUrl || "",
+                        videoUrls: module.videoUrls?.length ? module.videoUrls : module.videoUrl ? [module.videoUrl] : [""],
                         imageUrl: module.imageUrl || "",
                       });
                     }}>Edit</Button>
@@ -938,7 +989,7 @@ function ModulePanel({ courses, selectedCourseId, chooseCourse, modules, draft, 
                               duration: String(child.duration),
                               parentModuleId: child.parentModuleId || "",
                               prerequisiteModuleId: child.prerequisiteModuleId || "",
-                              videoUrl: child.videoUrl || "",
+                              videoUrls: child.videoUrls?.length ? child.videoUrls : child.videoUrl ? [child.videoUrl] : [""],
                               imageUrl: child.imageUrl || "",
                             });
                           }}>Edit</Button>

@@ -10,6 +10,7 @@ This folder contains the starting database schema and row-level security setup f
 - `advanced-courses-seed.sql`: repeatable three-module course with nested submodules, videos, prerequisites, quizzes, and enrollments.
 - `payment-migration.sql`: upgrade an existing database with subscription-owned enrollments.
 - `registration-profile-migration.sql`: upgrade an existing database for the expanded signup fields.
+- `module-video-urls-migration.sql`: upgrade an existing database to support multiple module video links.
 
 ## Recommended Supabase setup
 
@@ -85,6 +86,8 @@ It contains three modules:
 The course includes video URLs, prerequisites, quizzes, publication, and student enrollment. The final query in the script reports the module, quiz, and enrollment counts.
 
 In the app, teachers and admins create courses from **Admin CMS -> Courses**. The API writes through the Supabase storage adapter, and new course, module, and quiz IDs come from Supabase. A newly created course starts unpublished; publish it from the course editor before checking the student dashboard.
+
+For an existing project, run `module-video-urls-migration.sql` in the Supabase SQL editor before deploying the multiple-video module editor. It creates `modules.video_urls` and copies each existing `video_url` into the new array column. New projects receive the column from `schema.sql`.
 
 ## Paystack setup
 

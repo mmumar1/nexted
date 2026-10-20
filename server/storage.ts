@@ -276,7 +276,10 @@ export class MemStorage implements IStorage {
       },
     ];
 
-    modules.forEach(m => this.modules.set(m.id, m as Module));
+    modules.forEach((module) => this.modules.set(module.id, {
+      ...module,
+      videoUrls: module.videoUrl ? [module.videoUrl] : [],
+    }));
 
     // Create quizzes for each module
     const quiz1: Quiz = {
@@ -495,6 +498,7 @@ export class MemStorage implements IStorage {
       ...insertModule,
       id,
       videoUrl: insertModule.videoUrl ?? null,
+      videoUrls: insertModule.videoUrls ?? (insertModule.videoUrl ? [insertModule.videoUrl] : []),
       imageUrl: insertModule.imageUrl ?? null,
       parentModuleId: insertModule.parentModuleId ?? null,
       prerequisiteModuleId: insertModule.prerequisiteModuleId ?? null,
@@ -507,7 +511,20 @@ export class MemStorage implements IStorage {
   async updateModule(id: string, data: Partial<InsertModule>): Promise<Module | undefined> {
     const module = this.modules.get(id);
     if (!module) return undefined;
-    const updated: Module = { ...module, ...data, videoUrl: data.videoUrl ?? module.videoUrl, imageUrl: data.imageUrl ?? module.imageUrl, parentModuleId: data.parentModuleId ?? module.parentModuleId, prerequisiteModuleId: data.prerequisiteModuleId ?? module.prerequisiteModuleId, duration: data.duration ?? module.duration };
+    const updated: Module = {
+      ...module,
+      ...data,
+      videoUrl: data.videoUrls !== undefined && data.videoUrl === undefined
+        ? data.videoUrls[0] ?? null
+        : data.videoUrl ?? module.videoUrl,
+      videoUrls: data.videoUrls ?? (data.videoUrl !== undefined
+        ? data.videoUrl ? [data.videoUrl] : []
+        : module.videoUrls),
+      imageUrl: data.imageUrl ?? module.imageUrl,
+      parentModuleId: data.parentModuleId ?? module.parentModuleId,
+      prerequisiteModuleId: data.prerequisiteModuleId ?? module.prerequisiteModuleId,
+      duration: data.duration ?? module.duration,
+    };
     this.modules.set(id, updated);
     return updated;
   }

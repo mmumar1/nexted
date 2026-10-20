@@ -92,6 +92,7 @@ export const modules = pgTable("modules", {
   order: integer("order").notNull(),
   content: text("content").notNull(),
   videoUrl: text("video_url"),
+  videoUrls: text("video_urls").array().notNull().default(sql`'{}'::text[]`),
   imageUrl: text("image_url"),
   parentModuleId: varchar("parent_module_id"),
   prerequisiteModuleId: varchar("prerequisite_module_id"),
@@ -103,9 +104,27 @@ export const httpImageUrlSchema = z.string().url().refine((value) => {
   return protocol === "http:" || protocol === "https:";
 }, "Images must use an HTTP or HTTPS URL");
 
+const youtubeVideoUrlSchema = z.string().trim().url().refine((value) => {
+  const url = new URL(value);
+  const youtubeHosts = [
+    "youtube.com",
+    "www.youtube.com",
+    "m.youtube.com",
+    "youtu.be",
+    "www.youtu.be",
+    "youtube-nocookie.com",
+    "www.youtube-nocookie.com",
+  ];
+  return youtubeHosts.includes(url.hostname.toLowerCase())
+    && (url.protocol === "http:" || url.protocol === "https:");
+}, "Enter a valid YouTube video URL");
+
 export const insertModuleSchema = createInsertSchema(modules)
   .omit({ id: true })
-  .extend({ imageUrl: httpImageUrlSchema.nullable().optional() });
+  .extend({
+    imageUrl: httpImageUrlSchema.nullable().optional(),
+    videoUrls: z.array(youtubeVideoUrlSchema).optional(),
+  });
 export type InsertModule = z.infer<typeof insertModuleSchema>;
 export type Module = typeof modules.$inferSelect;
 

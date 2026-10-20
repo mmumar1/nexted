@@ -52,6 +52,7 @@ create table public.modules (
   sort_order integer not null default 1,
   content text not null,
   video_url text,
+  video_urls text[] not null default '{}'::text[],
   image_url text,
   parent_module_id uuid references public.modules(id) on delete set null,
   prerequisite_module_id uuid references public.modules(id) on delete set null,

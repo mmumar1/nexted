@@ -70,6 +70,11 @@ function mapModule(row: DatabaseRow): Module {
     order: row.sort_order,
     content: row.content,
     videoUrl: row.video_url,
+    videoUrls: Array.isArray(row.video_urls) && row.video_urls.length
+      ? row.video_urls
+      : row.video_url
+        ? [row.video_url]
+        : [],
     imageUrl: row.image_url,
     parentModuleId: row.parent_module_id,
     prerequisiteModuleId: row.prerequisite_module_id,
@@ -300,7 +305,8 @@ export class SupabaseStorage implements IStorage {
       title: module.title,
       sort_order: module.order,
       content: module.content,
-      video_url: module.videoUrl ?? null,
+      video_url: module.videoUrls?.[0] ?? module.videoUrl ?? null,
+      video_urls: module.videoUrls ?? (module.videoUrl ? [module.videoUrl] : []),
       image_url: module.imageUrl ?? null,
       parent_module_id: module.parentModuleId ?? null,
       prerequisite_module_id: module.prerequisiteModuleId ?? null,
@@ -313,10 +319,13 @@ export class SupabaseStorage implements IStorage {
     const payload: DatabaseRow = {};
     const fields: Array<[keyof InsertModule, string]> = [
       ["courseId", "course_id"], ["title", "title"], ["order", "sort_order"], ["content", "content"],
-      ["videoUrl", "video_url"], ["imageUrl", "image_url"], ["parentModuleId", "parent_module_id"],
+      ["videoUrl", "video_url"], ["videoUrls", "video_urls"], ["imageUrl", "image_url"], ["parentModuleId", "parent_module_id"],
       ["prerequisiteModuleId", "prerequisite_module_id"], ["duration", "duration_minutes"],
     ];
     for (const [source, target] of fields) if (update[source] !== undefined) payload[target] = update[source];
+    if (update.videoUrls !== undefined && update.videoUrl === undefined) {
+      payload.video_url = update.videoUrls[0] ?? null;
+    }
     const { data, error } = await this.client.from("modules").update(payload).eq("id", id).select("*").maybeSingle();
     return data ? mapModule(required(data, error)!) : undefined;
   }

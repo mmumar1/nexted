@@ -29,7 +29,13 @@ export function ModuleContent({
   onUpgrade,
   onRedeemCoupon,
 }: ModuleContentProps) {
-  const embedUrl = normalizeYouTubeEmbedUrl(module.videoUrl);
+  const videoEmbeds = (module.videoUrls?.length
+    ? module.videoUrls
+    : module.videoUrl
+      ? [module.videoUrl]
+      : [])
+    .map((videoUrl) => normalizeYouTubeEmbedUrl(videoUrl))
+    .filter((embedUrl): embedUrl is string => !!embedUrl);
   const canGoNext = !!nextModule;
   const moduleLabel = getModuleDisplayLabel(module, [previousModule ?? module, nextModule ?? module, module].filter(Boolean) as Module[]);
 
@@ -52,18 +58,26 @@ export function ModuleContent({
           <img src={module.imageUrl} alt="" className="mt-6 max-h-80 w-full rounded-md object-cover" />
         )}
 
-        {embedUrl && (
-          <div className="mt-6 overflow-hidden rounded-md border bg-black">
-            <div className="aspect-video">
-              <iframe
-                className="h-full w-full"
-                src={embedUrl}
-                title={module.title}
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                referrerPolicy="strict-origin-when-cross-origin"
-                allowFullScreen
-              />
-            </div>
+        {videoEmbeds.length > 0 && (
+          <div className="mt-8 space-y-6" aria-label="Module videos">
+            {videoEmbeds.map((embedUrl, index) => (
+              <section key={`${embedUrl}-${index}`} className="space-y-2">
+                <h3 className="text-sm font-medium text-muted-foreground">Video {index + 1}</h3>
+                <div className="w-full overflow-hidden rounded-lg border bg-black shadow-sm">
+                  <div className="aspect-video">
+                    <iframe
+                      className="h-full w-full"
+                      src={embedUrl}
+                      title={`${module.title} - Video ${index + 1}`}
+                      loading="lazy"
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                      referrerPolicy="strict-origin-when-cross-origin"
+                      allowFullScreen
+                    />
+                  </div>
+                </div>
+              </section>
+            ))}
           </div>
         )}
 

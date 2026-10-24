@@ -15,6 +15,7 @@ import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth-context";
 import { isStaffRole } from "@/lib/auth-utils";
+import { WhatsAppFloat } from "@/components/whatsapp-float";
 
 const brand = {
   teal: "#20A99A",
@@ -230,12 +231,12 @@ export default function Landing() {
             <p className="mt-6 max-w-xl text-base leading-7 text-white/80 sm:text-lg sm:leading-8">
               {activeHero.description}
             </p>
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <Button asChild size="lg" className="h-12 rounded-lg px-6 text-base font-bold text-[#17243B] hover:opacity-90" style={{ backgroundColor: brand.teal }}>
-                <Link href="/register">Explore Learnpedia <ArrowRight className="ml-2 h-4 w-4" /></Link>
+            <div className="mt-8 grid grid-cols-2 gap-3 sm:flex sm:flex-row sm:gap-4">
+              <Button asChild size="lg" className="h-auto min-h-12 w-full whitespace-normal rounded-lg px-2.5 py-3 text-center text-xs font-bold leading-tight text-[#17243B] hover:opacity-90 sm:w-auto sm:px-6 sm:text-base" style={{ backgroundColor: brand.teal }}>
+                <Link href="/register" className="justify-center">Explore Learnpedia <ArrowRight className="ml-1 h-4 w-4 shrink-0 sm:ml-2" /></Link>
               </Button>
-              <Button asChild size="lg" variant="outline" className="h-12 rounded-lg border-white/50 bg-white/5 px-6 text-base font-bold text-white hover:bg-white/15 hover:text-white">
-                <a href="#learning-paths">Find your learning path <ArrowDown className="ml-2 h-4 w-4" /></a>
+              <Button asChild size="lg" variant="outline" className="h-auto min-h-12 w-full whitespace-normal rounded-lg border-white/50 bg-white/5 px-2.5 py-3 text-center text-xs font-bold leading-tight text-white hover:bg-white/15 hover:text-white sm:w-auto sm:px-6 sm:text-base">
+                <a href="#learning-paths" className="justify-center">Find your path <ArrowDown className="ml-1 h-4 w-4 shrink-0 sm:ml-2" /></a>
               </Button>
             </div>
           </div>
@@ -447,6 +448,7 @@ export default function Landing() {
           </div>
         </div>
       </footer>
+      <WhatsAppFloat />
     </main>
   );
 }

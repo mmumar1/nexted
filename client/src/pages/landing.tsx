@@ -235,7 +235,7 @@ export default function Landing() {
               <Button asChild size="lg" className="h-auto min-h-12 w-full whitespace-normal rounded-lg px-2.5 py-3 text-center text-xs font-bold leading-tight text-[#17243B] hover:opacity-90 sm:w-auto sm:px-6 sm:text-base" style={{ backgroundColor: brand.teal }}>
                 <Link href="/register" className="justify-center">Explore Learnpedia <ArrowRight className="ml-1 h-4 w-4 shrink-0 sm:ml-2" /></Link>
               </Button>
-              <Button asChild size="lg" variant="outline" className="h-auto min-h-12 w-full whitespace-normal rounded-lg border-white/50 bg-white/5 px-2.5 py-3 text-center text-xs font-bold leading-tight text-white hover:bg-white/15 hover:text-white sm:w-auto sm:px-6 sm:text-base">
+              <Button asChild size="lg" variant="outline" className="h-auto min-h-12 w-full whitespace-normal rounded-lg border-[#FFA500] px-2.5 py-3 text-center text-xs font-bold leading-tight text-[#17243B] hover:bg-[#FFA500]/90 hover:text-[#17243B] sm:w-auto sm:px-6 sm:text-base" style={{ backgroundColor: brand.orange }}>
                 <a href="#learning-paths" className="justify-center">Find your path <ArrowDown className="ml-1 h-4 w-4 shrink-0 sm:ml-2" /></a>
               </Button>
             </div>

@@ -8,7 +8,6 @@ import {
   Menu,
   Quote,
   School,
-  Sparkles,
   X,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
@@ -26,7 +25,6 @@ const brand = {
 
 const heroSlides = [
   {
-    eyebrow: "FOR SENIOR SECONDARY STUDENTS",
     title: "Build the foundations for what comes next.",
     description:
       "Explore structured learning for SS1, SS2, and SS3, and make steady progress toward your academic goals.",
@@ -35,16 +33,13 @@ const heroSlides = [
     imageAlt: "Students learning together in a bright classroom",
   },
   {
-    eyebrow: "FOR UNIVERSITY LEARNERS",
     title: "Learning without limits.",
     description:
       "Find learning opportunities that support your university journey and help you deepen your understanding.",
-    image:
-      "https://images.unsplash.com/photo-1523050854058-8df90110c9f1?auto=format&fit=crop&w=2000&q=85",
-    imageAlt: "University graduates celebrating their achievement",
+    image: "/images/university-learning.svg",
+    imageAlt: "Illustration of a university learner studying among books",
   },
   {
-    eyebrow: "FOR PROFESSIONALS",
     title: "Make room for your next skill.",
     description:
       "Discover professional learning designed to help you build knowledge and move toward your ambitions.",
@@ -52,6 +47,14 @@ const heroSlides = [
       "https://images.unsplash.com/photo-1521737711867-e3b97375f902?auto=format&fit=crop&w=2000&q=85",
     imageAlt: "Colleagues sharing ideas during a learning session",
   },
+];
+
+const partnerSlots = [
+  "Education partner",
+  "Learning partner",
+  "Community partner",
+  "Institutional partner",
+  "Industry partner",
 ];
 
 const learningPaths = [
@@ -219,10 +222,6 @@ export default function Landing() {
         />
         <div className="relative mx-auto w-full max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
           <div className="max-w-2xl">
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/25 bg-white/10 px-4 py-2 text-xs font-bold tracking-[0.15em] text-white sm:text-sm">
-              <Sparkles className="h-4 w-4 text-[#FFA500]" aria-hidden="true" />
-              {activeHero.eyebrow}
-            </div>
             <h1 className="mt-7 max-w-xl text-balance text-4xl font-extrabold leading-[1.08] tracking-tight text-white sm:text-5xl lg:text-6xl">
               {heroIndex === 0 ? (
                 <>One platform. Different ambitions. <span className="text-[#FFA500]">Endless possibilities.</span></>
@@ -245,7 +244,7 @@ export default function Landing() {
             <div className="flex items-center gap-2" aria-label={`Slide ${heroIndex + 1} of ${heroSlides.length}`}>
               {heroSlides.map((slide, index) => (
                 <span
-                  key={slide.eyebrow}
+                  key={slide.title}
                   aria-current={index === heroIndex ? "true" : undefined}
                   className={`h-2 rounded-full transition-all ${index === heroIndex ? "w-9 bg-[#FFA500]" : "w-2 bg-white/60"}`}
                 />
@@ -407,6 +406,39 @@ export default function Landing() {
           <Button asChild size="lg" className="h-12 shrink-0 rounded-lg px-6 font-bold text-[#17243B] hover:opacity-90" style={{ backgroundColor: brand.orange }}>
             <Link href="/register">Create your account <ArrowRight className="ml-2 h-4 w-4" /></Link>
           </Button>
+        </div>
+      </section>
+
+      <section aria-labelledby="partners-heading" className="overflow-hidden border-y border-[#17243B]/[0.06] bg-white py-12 sm:py-14">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="text-center">
+            <h2 id="partners-heading" className="text-sm font-extrabold tracking-[0.16em] text-[#17243B] sm:text-base">
+              OUR PARTNERS
+            </h2>
+            <p className="mt-2 text-sm text-[#17243B]/55">
+              Partner logo spaces are placeholders until confirmed organizations and approved brand assets are provided.
+            </p>
+          </div>
+          <div className="partner-marquee mt-8" aria-label="Partner logo placeholders">
+            <div className="partner-marquee-track">
+              {[false, true].map((isDuplicate) => (
+                <div
+                  key={isDuplicate ? "duplicate" : "partners"}
+                  aria-hidden={isDuplicate}
+                  className="partner-marquee-group"
+                >
+                  {partnerSlots.map((label) => (
+                    <div
+                      key={label}
+                      className="flex h-20 w-52 shrink-0 items-center justify-center rounded-xl border border-dashed border-[#17243B]/20 bg-[#F3F9F9] px-5 text-center text-sm font-semibold text-[#17243B]/45"
+                    >
+                      <span>{label}<br />Logo placeholder</span>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </section>
 

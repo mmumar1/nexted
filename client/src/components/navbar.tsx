@@ -59,7 +59,7 @@ export function Navbar() {
 
   const handleLogout = () => {
     logout();
-    setLocation("/login");
+    setLocation("/");
   };
 
   const userName = user?.fullName || "Student";

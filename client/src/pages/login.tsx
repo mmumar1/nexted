@@ -16,7 +16,21 @@ import { WhatsAppFloat } from "@/components/whatsapp-float";
 
 type LoginMode = "student" | "staff";
 
-export default function Login({ initialMode = "student" }: { initialMode?: LoginMode; params?: Record<string, string | undefined> }) {
+interface LoginProps {
+  initialMode?: LoginMode;
+  params?: Record<string, string | undefined>;
+  inlineModal?: boolean;
+  onClose?: () => void;
+  switchToRegister?: () => void;
+  [key: string]: unknown;
+}
+
+export default function Login({
+  initialMode = "student",
+  inlineModal = false,
+  onClose,
+  switchToRegister,
+}: LoginProps) {
   const [, setLocation] = useLocation();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string>("");
@@ -73,6 +87,10 @@ export default function Login({ initialMode = "student" }: { initialMode?: Login
         throw new Error("Choose Student only with a student account");
       }
       login(user);
+      if (inlineModal) {
+        onClose?.();
+        return;
+      }
       setLocation(isStaff ? "/admin" : "/dashboard");
     } catch (err: any) {
       setError(err.message || "Invalid email or password");
@@ -81,12 +99,12 @@ export default function Login({ initialMode = "student" }: { initialMode?: Login
     }
   };
 
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/5 via-background to-accent/5 p-4">
-      <div className="w-full max-w-md space-y-6">
-        <Card className="border-card-border">
-          <CardHeader className="space-y-1 text-center">
-            <div className="flex justify-center mb-4">
+  const content = (
+    <div className={inlineModal ? "w-full" : "min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/5 via-background to-accent/5 p-4"}>
+      <div className={`w-full ${inlineModal ? "max-w-none" : "max-w-md space-y-6"}`}>
+        <Card className={inlineModal ? "border-0 bg-white shadow-none" : "border-card-border"}>
+          <CardHeader className={`space-y-1 text-center ${inlineModal ? "px-5 pb-4 pt-5 sm:px-8 sm:pt-7" : ""}`}>
+            {!inlineModal && <div className="flex justify-center mb-4">
               <div className="flex items-center gap-2">
                 
                  {/*<div className="p-2 bg-primary rounded-md">
@@ -98,17 +116,17 @@ export default function Login({ initialMode = "student" }: { initialMode?: Login
                   <div className="text-2xl font-bold text-foreground">LEARNPEDIA</div>
                 </div>
               </div>
-            </div>
-              <CardTitle className="text-2xl font-bold">Welcome Back</CardTitle>
+            </div>}
+            <CardTitle className="text-2xl font-bold text-[#17243B]">Welcome back</CardTitle>
             <CardDescription className="text-base">
                 Sign in to continue your learning journey
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="mb-6 grid grid-cols-2 rounded-md border bg-muted/40 p-1" role="group" aria-label="Choose account type">
+          <CardContent className={inlineModal ? "px-5 pb-6 sm:px-8 sm:pb-8" : ""}>
+            <div className="mb-6 grid grid-cols-2 rounded-xl border border-[#17243B]/[0.08] bg-[#F3F9F9] p-1" role="group" aria-label="Choose account type">
               <button
                 type="button"
-                className={`rounded-sm px-3 py-2 text-sm font-medium transition-colors ${loginMode === "student" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+                className={`rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors ${loginMode === "student" ? "bg-white text-[#17243B] shadow-sm" : "text-[#17243B]/55 hover:text-[#17243B]"}`}
                 onClick={() => { setLoginMode("student"); setError(""); }}
                 aria-pressed={loginMode === "student"}
                 data-testid="button-student-login-mode"
@@ -117,7 +135,7 @@ export default function Login({ initialMode = "student" }: { initialMode?: Login
               </button>
               <button
                 type="button"
-                className={`rounded-sm px-3 py-2 text-sm font-medium transition-colors ${loginMode === "staff" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+                className={`rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors ${loginMode === "staff" ? "bg-white text-[#17243B] shadow-sm" : "text-[#17243B]/55 hover:text-[#17243B]"}`}
                 onClick={() => { setLoginMode("staff"); setError(""); }}
                 aria-pressed={loginMode === "staff"}
                 data-testid="button-staff-login-mode"
@@ -125,7 +143,7 @@ export default function Login({ initialMode = "student" }: { initialMode?: Login
                 Teacher / Admin
               </button>
             </div>
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
               <div className="space-y-2">
                 <Label htmlFor="email" className="text-sm font-medium">
                   Email
@@ -187,7 +205,7 @@ export default function Login({ initialMode = "student" }: { initialMode?: Login
 
               <Button
                 type="submit"
-                className="w-full"
+                className="w-full rounded-lg font-bold"
                 disabled={isLoading}
                 data-testid="button-login"
               >
@@ -202,21 +220,36 @@ export default function Login({ initialMode = "student" }: { initialMode?: Login
               </Button>
             </form>
           </CardContent>
-          <CardFooter className="flex flex-col space-y-4">
+          {!inlineModal && <CardFooter className="flex flex-col space-y-4">
             <div className="text-sm text-center text-muted-foreground">
               Don't have an account?{" "}
-              <Link href="/register" className="text-primary font-medium hover:underline" data-testid="link-register">
-                Create account
-              </Link>
+              {switchToRegister ? (
+                <button
+                  type="button"
+                  className="text-primary font-medium hover:underline"
+                  data-testid="link-register"
+                  onClick={switchToRegister}
+                >
+                  Create account
+                </button>
+              ) : (
+                <Link href="/register" className="text-primary font-medium hover:underline" data-testid="link-register">
+                  Create account
+                </Link>
+              )}
             </div>
-          </CardFooter>
+          </CardFooter>}
         </Card>
 
-        <p className="text-center text-sm text-muted-foreground">
-          Join 1,000+ students learning with Learnpedia
-        </p>
+        {!inlineModal && (
+          <p className="text-center text-sm text-muted-foreground">
+            Join 1,000+ students learning with Learnpedia
+          </p>
+        )}
       </div>
-      <WhatsAppFloat />
+      {!inlineModal && <WhatsAppFloat />}
     </div>
   );
+
+  return content;
 }

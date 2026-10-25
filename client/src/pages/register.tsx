@@ -15,7 +15,14 @@ import { supabase } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
 import { WhatsAppFloat } from "@/components/whatsapp-float";
 
-export default function Register() {
+interface RegisterProps {
+  inlineModal?: boolean;
+  onClose?: () => void;
+  switchToLogin?: () => void;
+  [key: string]: unknown;
+}
+
+export default function Register({ inlineModal = false, onClose, switchToLogin }: RegisterProps) {
   const [, setLocation] = useLocation();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string>("");
@@ -82,6 +89,10 @@ export default function Register() {
           ? "Please login to continue."
           : "Check your email to confirm your account, then login to continue.",
       });
+      if (inlineModal) {
+        onClose?.();
+        return;
+      }
       setLocation("/login");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed. Please try again.");
@@ -94,23 +105,23 @@ export default function Register() {
   const selectClass = (hasError: boolean) =>
     `h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${hasError ? "border-destructive" : ""}`;
 
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/5 via-background to-accent/5 p-4">
-      <div className="w-full max-w-xl space-y-6">
-        <Card className="border-card-border">
-          <CardHeader className="space-y-1 text-center">
-            <div className="flex justify-center mb-4">
+  const content = (
+    <div className={inlineModal ? "w-full" : "min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/5 via-background to-accent/5 p-4"}>
+      <div className={`w-full ${inlineModal ? "max-w-none" : "max-w-xl space-y-6"}`}>
+        <Card className={inlineModal ? "border-0 bg-white shadow-none" : "border-card-border"}>
+          <CardHeader className={`space-y-1 text-center ${inlineModal ? "px-5 pb-4 pt-5 sm:px-8 sm:pt-7" : ""}`}>
+            {!inlineModal && <div className="flex justify-center mb-4">
               <div className="text-left">
                 <div className="text-2xl font-bold text-foreground">Learnpedia</div>
                 <div className="text-xs text-muted-foreground">Learn Without limits</div>
               </div>
-            </div>
-            <CardTitle className="text-2xl font-bold">Create Account</CardTitle>
+            </div>}
+            <CardTitle className="text-2xl font-bold text-[#17243B]">Create your account</CardTitle>
             <CardDescription className="text-base">
               Start your learning journey today
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className={inlineModal ? "px-5 pb-6 sm:px-8 sm:pb-8" : ""}>
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="fullName" className="text-sm font-medium">Full Name</Label>
@@ -262,21 +273,36 @@ export default function Register() {
               </Button>
             </form>
           </CardContent>
-          <CardFooter className="flex flex-col space-y-4">
+          {!inlineModal && <CardFooter className="flex flex-col space-y-4">
             <div className="text-sm text-center text-muted-foreground">
               Already have an account?{" "}
-              <Link href="/login" className="text-primary font-medium hover:underline" data-testid="link-login">
-                Sign in
-              </Link>
+              {switchToLogin ? (
+                <button
+                  type="button"
+                  className="text-primary font-medium hover:underline"
+                  data-testid="link-login"
+                  onClick={switchToLogin}
+                >
+                  Sign in
+                </button>
+              ) : (
+                <Link href="/login" className="text-primary font-medium hover:underline" data-testid="link-login">
+                  Sign in
+                </Link>
+              )}
             </div>
-          </CardFooter>
+          </CardFooter>}
         </Card>
 
-        <p className="text-center text-sm text-muted-foreground">
-          Join over 1,000+ students learning with Learnpedia.
-        </p>
+        {!inlineModal && (
+          <p className="text-center text-sm text-muted-foreground">
+            Join over 1,000+ students learning with Learnpedia.
+          </p>
+        )}
       </div>
-      <WhatsAppFloat />
+      {!inlineModal && <WhatsAppFloat />}
     </div>
   );
+
+  return content;
 }

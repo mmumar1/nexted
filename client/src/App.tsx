@@ -18,13 +18,16 @@ import ForgotPassword from "@/pages/forgot-password";
 import ResetPassword from "@/pages/reset-password";
 import LearningPlaceholder from "@/pages/learning-placeholder";
 
+const LoginRoute = (props: any) => <Login {...props} />;
+const RegisterRoute = (props: any) => <Register {...props} />;
+
 function Router() {
   return (
     <Switch>
       <Route path="/" component={Landing} />
-      <Route path="/login" component={Login} />
+      <Route path="/login" component={LoginRoute} />
       <Route path="/login/admin" component={() => <Login initialMode="staff" />} />
-      <Route path="/register" component={Register} />
+      <Route path="/register" component={RegisterRoute} />
       <Route path="/forgot-password" component={ForgotPassword} />
       <Route path="/reset-password" component={ResetPassword} />
       <Route path="/dashboard" component={Dashboard} />

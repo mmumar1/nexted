@@ -12,6 +12,9 @@ import {
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
+import Login from "@/pages/login";
+import Register from "@/pages/register";
 import { useAuth } from "@/lib/auth-context";
 import { isStaffRole } from "@/lib/auth-utils";
 import { WhatsAppFloat } from "@/components/whatsapp-float";
@@ -91,7 +94,6 @@ const studentStories = [
     imageAlt: "Illustrative portrait representing a secondary school learner",
     quote: "I can revisit topics at my own pace, and the quizzes help me see what I should practise next.",
     name: "Amina Yusuf",
-    detail: "Illustrative SS2 learner",
   },
   {
     image:
@@ -99,7 +101,6 @@ const studentStories = [
     imageAlt: "Illustrative portrait representing a university learner",
     quote: "The structured lessons make it easier to build a steady study routine alongside my university work.",
     name: "Chidi Okafor",
-    detail: "Illustrative university learner",
   },
   {
     image:
@@ -107,7 +108,6 @@ const studentStories = [
     imageAlt: "Illustrative portrait representing a professional learner",
     quote: "I like being able to fit professional learning around my schedule and keep developing new skills.",
     name: "Zainab Bello",
-    detail: "Illustrative professional learner",
   },
 ];
 
@@ -191,6 +191,8 @@ export default function Landing() {
   const [heroIndex, setHeroIndex] = useState(0);
   const [storyIndex, setStoryIndex] = useState(0);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [authMode, setAuthMode] = useState<"login" | "register">("login");
+  const [authDialogOpen, setAuthDialogOpen] = useState(false);
 
   useEffect(() => {
     if (user) setLocation(isStaffRole(user.role) ? "/admin" : "/dashboard");
@@ -218,6 +220,45 @@ export default function Landing() {
   const activeStory = studentStories[storyIndex];
   return (
     <main className="min-h-screen" style={{ backgroundColor: brand.background, color: brand.navy }}>
+      <Dialog open={authDialogOpen} onOpenChange={setAuthDialogOpen}>
+        <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-2xl overflow-hidden rounded-2xl border-white/70 bg-white p-0 shadow-[0_28px_90px_rgba(23,36,59,0.28)] [&>button]:right-4 [&>button]:top-4 [&>button]:z-20 [&>button]:rounded-full [&>button]:bg-[#F3F9F9] [&>button]:p-2 [&>button]:opacity-80 [&>button]:shadow-sm [&>button]:hover:opacity-100 sm:max-w-2xl">
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto">
+            <div className="sticky top-0 z-10 border-b border-[#17243B]/[0.06] bg-white/95 px-5 pb-4 pt-5 backdrop-blur sm:px-8 sm:pt-7">
+              <div className="mb-5 pr-10">
+                <p className="text-xl font-extrabold tracking-tight text-[#17243B]">Learnpedia</p>
+                <p className="mt-1 text-xs font-bold tracking-[0.14em] text-[#20A99A]">LEARN WITHOUT LIMITS</p>
+              </div>
+              <div className="grid grid-cols-2 rounded-xl bg-[#F3F9F9] p-1" role="tablist" aria-label="Choose an account action">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={authMode === "login"}
+                  onClick={() => setAuthMode("login")}
+                  className={`rounded-lg px-4 py-2.5 text-sm font-bold transition-all ${authMode === "login" ? "bg-white text-[#17243B] shadow-sm" : "text-[#17243B]/55 hover:text-[#17243B]"}`}
+                >
+                  Log in
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={authMode === "register"}
+                  onClick={() => setAuthMode("register")}
+                  className={`rounded-lg px-4 py-2.5 text-sm font-bold transition-all ${authMode === "register" ? "bg-white text-[#17243B] shadow-sm" : "text-[#17243B]/55 hover:text-[#17243B]"}`}
+                >
+                  Create account
+                </button>
+              </div>
+            </div>
+            <div className="px-2 pb-3 sm:px-4">
+              {authMode === "login" ? (
+                <Login inlineModal onClose={() => setAuthDialogOpen(false)} />
+              ) : (
+                <Register inlineModal onClose={() => setAuthDialogOpen(false)} />
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
       <header className="sticky top-0 z-40 border-b border-[#17243B]/10 bg-white/95 backdrop-blur">
         <div className="mx-auto flex h-[76px] max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
           <Brand />
@@ -235,16 +276,16 @@ export default function Landing() {
           </nav>
 
           <div className="hidden items-center gap-3 sm:flex">
-            <Link href="/login" className="rounded-md px-4 py-2 text-sm font-bold transition-colors hover:bg-[#F3F9F9]">
+            <button type="button" onClick={() => { setAuthMode("login"); setAuthDialogOpen(true); }} className="rounded-md px-4 py-2 text-sm font-bold transition-colors hover:bg-[#F3F9F9]">
               Log in
-            </Link>
-            <Button asChild className="h-11 rounded-lg px-5 font-bold text-[#17243B] hover:opacity-90" style={{ backgroundColor: brand.teal }}>
-              <Link href="/register">Create account</Link>
+            </button>
+            <Button type="button" className="h-11 rounded-lg px-5 font-bold text-[#17243B] hover:opacity-90" style={{ backgroundColor: brand.teal }} onClick={() => { setAuthMode("register"); setAuthDialogOpen(true); }}>
+              Create account
             </Button>
           </div>
 
           <div className="flex items-center gap-2 sm:hidden">
-            <Link href="/login" className="px-2 py-2 text-sm font-bold">Log in</Link>
+            <button type="button" onClick={() => { setAuthMode("login"); setAuthDialogOpen(true); }} className="px-2 py-2 text-sm font-bold">Log in</button>
             <button
               type="button"
               className="flex h-10 w-10 items-center justify-center rounded-lg border border-[#17243B]/15"
@@ -262,7 +303,7 @@ export default function Landing() {
             <a onClick={() => setMobileMenuOpen(false)} href="#learning-paths" className="block rounded-lg px-3 py-3 text-sm font-semibold hover:bg-[#F3F9F9]">Learning paths</a>
             <a onClick={() => setMobileMenuOpen(false)} href="#why-learnpedia" className="block rounded-lg px-3 py-3 text-sm font-semibold hover:bg-[#F3F9F9]">Why Learnpedia</a>
             <a onClick={() => setMobileMenuOpen(false)} href="#about" className="block rounded-lg px-3 py-3 text-sm font-semibold hover:bg-[#F3F9F9]">About us</a>
-            <Link href="/register" className="mt-2 block rounded-lg px-3 py-3 text-sm font-bold text-[#20A99A] hover:bg-[#F3F9F9]">Create account</Link>
+            <button type="button" onClick={() => { setAuthMode("register"); setAuthDialogOpen(true); setMobileMenuOpen(false); }} className="mt-2 block w-full rounded-lg px-3 py-3 text-left text-sm font-bold text-[#20A99A] hover:bg-[#F3F9F9]">Create account</button>
           </nav>
         )}
       </header>
@@ -292,8 +333,8 @@ export default function Landing() {
               {activeHero.description}
             </p>
             <div className="mt-8 grid grid-cols-2 gap-3 sm:flex sm:flex-row sm:gap-4">
-              <Button asChild size="lg" className="h-auto min-h-12 w-full whitespace-normal rounded-lg px-2.5 py-3 text-center text-xs font-bold leading-tight text-[#17243B] hover:opacity-90 sm:w-auto sm:px-6 sm:text-base" style={{ backgroundColor: brand.teal }}>
-                <Link href="/register" className="justify-center">Explore Learnpedia <ArrowRight className="ml-1 h-4 w-4 shrink-0 sm:ml-2" /></Link>
+              <Button type="button" size="lg" className="h-auto min-h-12 w-full whitespace-normal rounded-lg px-2.5 py-3 text-center text-xs font-bold leading-tight text-[#17243B] hover:opacity-90 sm:w-auto sm:px-6 sm:text-base" style={{ backgroundColor: brand.teal }} onClick={() => { setAuthMode("register"); setAuthDialogOpen(true); }}>
+                Explore Learnpedia <ArrowRight className="ml-1 h-4 w-4 shrink-0 sm:ml-2" />
               </Button>
               <Button asChild size="lg" variant="outline" className="h-auto min-h-12 w-full whitespace-normal rounded-lg border-[#FFA500] px-2.5 py-3 text-center text-xs font-bold leading-tight text-[#17243B] hover:bg-[#FFA500]/90 hover:text-[#17243B] sm:w-auto sm:px-6 sm:text-base" style={{ backgroundColor: brand.orange }}>
                 <a href="#learning-paths" className="justify-center">Find your path <ArrowDown className="ml-1 h-4 w-4 shrink-0 sm:ml-2" /></a>
@@ -343,9 +384,9 @@ export default function Landing() {
                 </div>
                 <h3 className="mt-7 text-xl font-bold text-[#17243B]">{title}</h3>
                 <p className="mt-3 leading-7 text-[#17243B]/65">{detail}</p>
-                <Link href="/register" className="mt-5 inline-flex items-center gap-2 text-sm font-bold text-[#20A99A] hover:text-[#17243B]">
+                <button type="button" onClick={() => { setAuthMode("register"); setAuthDialogOpen(true); }} className="mt-5 inline-flex items-center gap-2 text-sm font-bold text-[#20A99A] hover:text-[#17243B]">
                   Get started <ArrowRight className="h-4 w-4" />
-                </Link>
+                </button>
               </article>
             ))}
           </div>
@@ -392,8 +433,8 @@ export default function Landing() {
                 </li>
               ))}
             </ul>
-            <Button asChild className="mt-8 h-12 rounded-lg px-6 font-bold text-white hover:opacity-90" style={{ backgroundColor: brand.navy }}>
-              <Link href="/register">Start your journey <ArrowRight className="ml-2 h-4 w-4" /></Link>
+            <Button type="button" className="mt-8 h-12 rounded-lg px-6 font-bold text-white hover:opacity-90" style={{ backgroundColor: brand.navy }} onClick={() => { setAuthMode("register"); setAuthDialogOpen(true); }}>
+              Start your journey <ArrowRight className="ml-2 h-4 w-4" />
             </Button>
           </div>
         </div>
@@ -408,8 +449,8 @@ export default function Landing() {
                 Learn in a way that fits your next move.
               </h2>
             </div>
-            <Button asChild variant="outline" className="h-11 rounded-lg border-[#17243B]/10 bg-white px-5 font-bold text-[#17243B] hover:bg-[#F3F9F9]">
-              <Link href="/register">Show more</Link>
+            <Button type="button" variant="outline" className="h-11 rounded-lg border-[#17243B]/10 bg-white px-5 font-bold text-[#17243B] hover:bg-[#F3F9F9]" onClick={() => { setAuthMode("register"); setAuthDialogOpen(true); }}>
+              Show more
             </Button>
           </div>
 
@@ -433,9 +474,9 @@ export default function Landing() {
                   </div>
                   <h3 className="mt-6 text-2xl font-extrabold text-[#17243B]">{title}</h3>
                   <p className="mt-3 text-base leading-7 text-[#17243B]/65">{description}</p>
-                  <Link href="/register" className="mt-6 inline-flex items-center gap-2 text-sm font-bold text-[#20A99A] hover:text-[#17243B]">
+                  <button type="button" onClick={() => { setAuthMode("register"); setAuthDialogOpen(true); }} className="mt-6 inline-flex items-center gap-2 text-sm font-bold text-[#20A99A] hover:text-[#17243B]">
                     Explore course <ArrowRight className="h-4 w-4" />
-                  </Link>
+                  </button>
                 </div>
               </article>
             ))}
@@ -474,12 +515,10 @@ export default function Landing() {
                 <p aria-live="polite" className="mt-7 text-xl font-semibold leading-8 text-[#17243B] sm:text-2xl sm:leading-9">
                   “{activeStory.quote}”
                 </p>
-                <p className="mt-4 text-xs leading-5 text-[#17243B]/50">Fictional sample quote and name; replace with a real, approved student story before launch.</p>
               </div>
               <div className="mt-8 flex items-end justify-between gap-4 border-t border-[#17243B]/10 pt-5">
                 <div>
                   <p className="font-bold text-[#17243B]">{activeStory.name}</p>
-                  <p className="mt-1 text-sm text-[#17243B]/60">{activeStory.detail}</p>
                 </div>
               </div>
             </div>
@@ -505,8 +544,8 @@ export default function Landing() {
             </h2>
             <p className="mt-3 leading-7 text-white/70">Create your Learnpedia account and find a learning path that fits your ambitions.</p>
           </div>
-          <Button asChild size="lg" className="h-12 shrink-0 rounded-lg px-6 font-bold text-[#17243B] hover:opacity-90" style={{ backgroundColor: brand.orange }}>
-            <Link href="/register">Create your account <ArrowRight className="ml-2 h-4 w-4" /></Link>
+          <Button type="button" size="lg" className="h-12 shrink-0 rounded-lg px-6 font-bold text-[#17243B] hover:opacity-90" style={{ backgroundColor: brand.orange }} onClick={() => { setAuthMode("register"); setAuthDialogOpen(true); }}>
+            Create your account <ArrowRight className="ml-2 h-4 w-4" />
           </Button>
         </div>
       </section>
@@ -549,8 +588,8 @@ export default function Landing() {
                   ))}
                 </ul>
 
-                <Button asChild className={`mt-8 h-12 rounded-lg px-6 font-bold ${highlight ? "text-[#17243B] hover:opacity-90" : "text-white hover:opacity-90"}`} style={highlight ? { backgroundColor: brand.orange } : { backgroundColor: brand.navy }}>
-                  <Link href="/register">Choose {name}</Link>
+                <Button type="button" className={`mt-8 h-12 rounded-lg px-6 font-bold ${highlight ? "text-[#17243B] hover:opacity-90" : "text-white hover:opacity-90"}`} style={highlight ? { backgroundColor: brand.orange } : { backgroundColor: brand.navy }} onClick={() => { setAuthMode("register"); setAuthDialogOpen(true); }}>
+                  Choose {name}
                 </Button>
               </article>
             ))}
@@ -614,8 +653,8 @@ export default function Landing() {
             <div>
               <h3 className="text-sm font-extrabold text-[#17243B]">Your account</h3>
               <ul className="mt-4 space-y-3 text-sm text-[#17243B]/65">
-                <li><Link href="/login" className="hover:text-[#20A99A]">Log in</Link></li>
-                <li><Link href="/register" className="hover:text-[#20A99A]">Create an account</Link></li>
+                <li><button type="button" onClick={() => { setAuthMode("login"); setAuthDialogOpen(true); }} className="hover:text-[#20A99A]">Log in</button></li>
+                <li><button type="button" onClick={() => { setAuthMode("register"); setAuthDialogOpen(true); }} className="hover:text-[#20A99A]">Create an account</button></li>
               </ul>
             </div>
             <div>

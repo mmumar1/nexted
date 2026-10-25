@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Navbar } from "@/components/navbar";
@@ -42,9 +42,104 @@ interface LeaderboardStatus {
   tiers: LeaderboardTier[];
 }
 
+interface SavedCourseOrder {
+  courseIds: string[];
+  lastRotationWeek: number;
+}
+
+const COURSE_ORDER_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+function hashString(value: string): number {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index++) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function orderDashboardCourses(
+  courses: CourseWithProgress[],
+  userId: string,
+): CourseWithProgress[] {
+  const activeCourses = courses.filter((course) => (course.progress || 0) > 0);
+  const notStartedCourses = courses.filter((course) => !(course.progress && course.progress > 0));
+  const storageKey = `dashboard-course-order:${userId}`;
+  const currentWeek = Math.floor(Date.now() / COURSE_ORDER_WEEK_MS);
+
+  let savedOrder: SavedCourseOrder | undefined;
+  try {
+    const storedValue = window.localStorage.getItem(storageKey);
+    if (storedValue) {
+      const parsed: unknown = JSON.parse(storedValue);
+      if (
+        typeof parsed === "object" &&
+        parsed !== null &&
+        "courseIds" in parsed &&
+        Array.isArray(parsed.courseIds) &&
+        parsed.courseIds.every((id) => typeof id === "string") &&
+        "lastRotationWeek" in parsed &&
+        typeof parsed.lastRotationWeek === "number"
+      ) {
+        savedOrder = {
+          courseIds: parsed.courseIds,
+          lastRotationWeek: parsed.lastRotationWeek,
+        };
+      }
+    }
+  } catch (error) {
+    console.warn("Could not read the saved dashboard course order:", error);
+    return courses;
+  }
+
+  const availableIds = new Set(notStartedCourses.map((course) => course.id));
+  const orderedIds = savedOrder
+    ? savedOrder.courseIds.filter((id, index, ids) => availableIds.has(id) && ids.indexOf(id) === index)
+    : [];
+
+  for (const course of notStartedCourses) {
+    if (!orderedIds.includes(course.id)) orderedIds.push(course.id);
+  }
+
+  if (!savedOrder) {
+    orderedIds.sort((firstId, secondId) => {
+      const firstRank = hashString(`${userId}:${currentWeek}:${firstId}`);
+      const secondRank = hashString(`${userId}:${currentWeek}:${secondId}`);
+      return firstRank - secondRank || firstId.localeCompare(secondId);
+    });
+  } else if (savedOrder.lastRotationWeek < currentWeek && orderedIds.length > 1) {
+    const swapIndex = hashString(`${userId}:${currentWeek}`) % (orderedIds.length - 1);
+    [orderedIds[swapIndex], orderedIds[swapIndex + 1]] = [
+      orderedIds[swapIndex + 1],
+      orderedIds[swapIndex],
+    ];
+  }
+
+  try {
+    window.localStorage.setItem(
+      storageKey,
+      JSON.stringify({ courseIds: orderedIds, lastRotationWeek: currentWeek }),
+    );
+  } catch (error) {
+    console.warn("Could not save the dashboard course order:", error);
+    return courses;
+  }
+
+  const coursesById = new Map(notStartedCourses.map((course) => [course.id, course]));
+  const orderedNotStartedCourses = orderedIds
+    .map((id) => coursesById.get(id))
+    .filter((course): course is CourseWithProgress => course !== undefined);
+
+  return [...activeCourses, ...orderedNotStartedCourses];
+}
+
 export default function Dashboard() {
   const [, setLocation] = useLocation();
   const { user, isAuthenticated } = useAuth();
+  const [orderedCoursesState, setOrderedCoursesState] = useState<{
+    userId: string;
+    courses: CourseWithProgress[];
+  } | null>(null);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -63,8 +158,21 @@ export default function Dashboard() {
     enabled: !!user?.id,
   });
 
+  useEffect(() => {
+    if (!user?.id || !courses) {
+      setOrderedCoursesState(null);
+      return;
+    }
+    setOrderedCoursesState({
+      userId: user.id,
+      courses: orderDashboardCourses(courses, user.id),
+    });
+  }, [courses, user?.id]);
+
   if (!user) return null;
 
+  const displayedCourses =
+    orderedCoursesState?.userId === user.id ? orderedCoursesState.courses : courses;
   const userName = user.fullName;
   const hasSubscriptionAccess = !!user?.hasActiveSubscription;
   const unlockedCount = courses?.filter((c) => canAccessCourse({ hasActiveSubscription: hasSubscriptionAccess, isUnlocked: c.isUnlocked })).length || 0;
@@ -203,7 +311,7 @@ export default function Dashboard() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {courses?.map((course) => (
+            {displayedCourses?.map((course) => (
               <Card
                 key={course.id}
                 className={`border-card-border overflow-hidden transition-all hover-elevate ${

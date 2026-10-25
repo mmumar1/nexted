@@ -110,7 +110,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = () => {
-    void supabase.auth.signOut();
+    profileRequestId.current++;
+    loadedUserId.current = null;
+    setUser(null);
+    setIsLoading(false);
+    void supabase.auth.signOut().then(({ error }) => {
+      if (error) {
+        console.error("Failed to sign out from Supabase:", error);
+      }
+    });
   };
 
   if (isLoading) {

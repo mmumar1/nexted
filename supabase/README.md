@@ -12,6 +12,7 @@ This folder contains the starting database schema and row-level security setup f
 - `registration-profile-migration.sql`: upgrade an existing database for the expanded signup fields.
 - `module-video-urls-migration.sql`: upgrade an existing database to support multiple module video links.
 - `cbt-question-bank-migration.sql`: add the CBT question bank, student attempts, and answer storage.
+- `cbt-exam-topics-migration.sql`: add JAMB/UTME or WAEC/NECO categories and topics to the CBT bank.
 - `events-notifications-migration.sql`: add staff-managed events, student RSVPs, and in-app event notifications.
 
 ## Recommended Supabase setup
@@ -30,6 +31,8 @@ This folder contains the starting database schema and row-level security setup f
 For an existing Supabase project, run `registration-profile-migration.sql` in the SQL Editor before accepting new signups. The migration adds nullable profile columns and updates the auth-user trigger so new account metadata is copied into `public.profiles`. Existing profiles remain valid and their new fields will be `NULL`.
 
 For an existing project, run `cbt-question-bank-migration.sql` in the SQL Editor before using **Admin CMS -> CBT question bank** or student CBT practice. It creates the separate question, attempt, and answer tables and enables row-level security; authenticated server APIs use the service-role client after checking the student's or staff member's Supabase identity and role.
+
+For an existing CBT installation, run `cbt-exam-topics-migration.sql` before deploying the exam-card and topic-selection experience. Existing questions remain uncategorized and are not offered to students until a teacher selects them in the question bank and bulk-assigns an exam category and topic. Reclassified published questions return to draft so teachers can review them before publishing under the new category.
 
 For an existing project, run `events-notifications-migration.sql` in the SQL Editor before using Events. It adds event scheduling, RSVP records, and per-student in-app notifications. Notifications are generated idempotently for each published event revision, including cancellations.
 
@@ -140,6 +143,8 @@ Use Vercel for the frontend and serverless API layer. Use Supabase for auth, dat
 ## Vercel deployment
 
 This repository includes `vercel.json` and `api/index.ts`. Vercel serves the Vite build from `dist/public` and routes `/api/*` requests to the existing Express route handlers as a serverless function.
+
+If API requests fail with `FUNCTION_INVOCATION_FAILED` despite a successful build, see [Vercel API Runtime Failures](../VERCEL_API_RUNTIME_TROUBLESHOOTING.md).
 
 Add these variables in **Vercel -> Project Settings -> Environment Variables** for Preview and Production:
 

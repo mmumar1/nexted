@@ -14,6 +14,7 @@ import {
   type QuizAttempt,
   type InsertQuizAttempt,
   type CbtQuestion,
+  type CbtExamType,
   type CbtQuestionFilters,
   type InsertCbtQuestion,
   type CbtQuestionCatalogEntry,
@@ -25,6 +26,8 @@ import {
   type EventFilters,
   type EventRsvp,
   type EventRsvpStatus,
+  type CourseConversationSummary,
+  type CourseMessage,
   type Project,
   type InsertProject,
 } from "../shared/schema.js";
@@ -80,6 +83,7 @@ export interface IStorage {
   getCbtQuestion(id: string): Promise<CbtQuestion | undefined>;
   createCbtQuestions(questions: InsertCbtQuestion[]): Promise<CbtQuestion[]>;
   updateCbtQuestion(id: string, data: Partial<CbtQuestion>): Promise<CbtQuestion | undefined>;
+  bulkClassifyCbtQuestions(ids: string[], examType: CbtExamType, topic: string, updatedBy: string, createdBy?: string): Promise<number>;
   getCbtQuestionCatalog(): Promise<CbtQuestionCatalogEntry[]>;
 
   // CBT student attempts
@@ -101,6 +105,14 @@ export interface IStorage {
   setEventRsvp(eventId: string, studentId: string, status: EventRsvpStatus): Promise<EventRsvp>;
   getEventNotifications(studentId: string): Promise<EventNotification[]>;
   markEventNotificationRead(notificationId: string, studentId: string): Promise<boolean>;
+
+  // Course messaging
+  getOrCreateCourseConversation(course: Course, studentId: string): Promise<CourseConversationSummary>;
+  getCourseConversation(id: string, userId: string): Promise<CourseConversationSummary | undefined>;
+  getCourseConversationsForUser(userId: string): Promise<CourseConversationSummary[]>;
+  getCourseMessages(conversationId: string, limit?: number): Promise<CourseMessage[]>;
+  createCourseMessage(conversationId: string, senderId: string, body: string): Promise<CourseMessage>;
+  markCourseMessagesRead(conversationId: string, readerId: string): Promise<void>;
 
   // Quiz Attempts
   getQuizAttempts(userId: string, quizId: string): Promise<QuizAttempt[]>;
@@ -126,6 +138,8 @@ export class MemStorage implements IStorage {
   private eventRsvps: Map<string, EventRsvp>;
   private eventNotifications: Map<string, EventNotification>;
   private eventNotificationOwners: Map<string, string>;
+  private courseConversations: Map<string, { id: string; courseId: string; studentId: string; createdAt: Date; updatedAt: Date }>;
+  private courseMessages: Map<string, CourseMessage>;
   private quizAttempts: Map<string, QuizAttempt>;
   private projects: Map<string, Project>;
 
@@ -142,6 +156,8 @@ export class MemStorage implements IStorage {
     this.eventRsvps = new Map();
     this.eventNotifications = new Map();
     this.eventNotificationOwners = new Map();
+    this.courseConversations = new Map();
+    this.courseMessages = new Map();
     this.quizAttempts = new Map();
     this.projects = new Map();
 
@@ -659,8 +675,13 @@ export class MemStorage implements IStorage {
   // CBT question bank
   async getCbtQuestions(filters: CbtQuestionFilters = {}): Promise<CbtQuestion[]> {
     return Array.from(this.cbtQuestions.values())
+      .filter((question) => !filters.ids || filters.ids.includes(question.id))
+      .filter((question) => !filters.examType || question.examType === filters.examType)
       .filter((question) => !filters.subject || question.subject.toLowerCase() === filters.subject.toLowerCase())
       .filter((question) => filters.examYear === undefined || question.examYear === filters.examYear)
+      .filter((question) => !filters.topic || question.topic === filters.topic)
+      .filter((question) => !filters.topics || filters.topics.includes(question.topic ?? ""))
+      .filter((question) => !filters.requireTopic || !!question.topic?.trim())
       .filter((question) => !filters.status || question.status === filters.status)
       .filter((question) => !filters.createdBy || question.createdBy === filters.createdBy)
       .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
@@ -701,17 +722,52 @@ export class MemStorage implements IStorage {
     return updated;
   }
 
+  async bulkClassifyCbtQuestions(
+    ids: string[],
+    examType: CbtExamType,
+    topic: string,
+    updatedBy: string,
+    createdBy?: string,
+  ): Promise<number> {
+    const questions = ids.map((id) => this.cbtQuestions.get(id));
+    if (questions.some((question) => !question || (createdBy && question.createdBy !== createdBy))) return 0;
+    const now = new Date();
+    for (const question of questions) {
+      if (!question) continue;
+      this.cbtQuestions.set(question.id, {
+        ...question,
+        examType,
+        topic,
+        status: question.status === "published" ? "draft" : question.status,
+        publishedBy: question.status === "published" ? null : question.publishedBy,
+        publishedAt: question.status === "published" ? null : question.publishedAt,
+        updatedBy,
+        updatedAt: now,
+      });
+    }
+    return questions.length;
+  }
+
   async getCbtQuestionCatalog(): Promise<CbtQuestionCatalogEntry[]> {
     const grouped = new Map<string, CbtQuestionCatalogEntry>();
     for (const question of Array.from(this.cbtQuestions.values())) {
-      if (question.status !== "published") continue;
-      const key = `${question.subject.toLowerCase()}\u0000${question.examYear}`;
+      if (question.status !== "published" || !question.examType || !question.topic) continue;
+      const key = `${question.examType}\u0000${question.subject.toLowerCase()}\u0000${question.examYear}\u0000${question.topic}`;
       const existing = grouped.get(key);
       if (existing) existing.count += 1;
-      else grouped.set(key, { subject: question.subject, examYear: question.examYear, count: 1 });
+      else grouped.set(key, {
+        examType: question.examType,
+        subject: question.subject,
+        examYear: question.examYear,
+        topic: question.topic,
+        count: 1,
+      });
     }
     return Array.from(grouped.values()).sort((a, b) =>
-      a.subject.localeCompare(b.subject) || b.examYear - a.examYear,
+      a.examType.localeCompare(b.examType)
+      || a.subject.localeCompare(b.subject)
+      || b.examYear - a.examYear
+      || a.topic.localeCompare(b.topic),
     );
   }
 
@@ -921,6 +977,96 @@ export class MemStorage implements IStorage {
     if (!notification || this.eventNotificationOwners.get(notificationId) !== studentId || notification.readAt) return false;
     this.eventNotifications.set(notificationId, { ...notification, readAt: new Date() });
     return true;
+  }
+
+  private mapCourseConversation(
+    conversation: { id: string; courseId: string; studentId: string; createdAt: Date; updatedAt: Date },
+    userId?: string,
+  ): CourseConversationSummary | undefined {
+    const course = this.courses.get(conversation.courseId);
+    const student = this.users.get(conversation.studentId);
+    const instructor = course?.instructorId ? this.users.get(course.instructorId) : undefined;
+    if (!course || !student || !instructor) return undefined;
+    return {
+      id: conversation.id,
+      courseId: course.id,
+      courseTitle: course.title,
+      studentId: student.id,
+      studentName: student.fullName,
+      instructorId: instructor.id,
+      instructorName: instructor.fullName,
+      createdAt: conversation.createdAt,
+      updatedAt: conversation.updatedAt,
+      unreadCount: Array.from(this.courseMessages.values()).filter((message) =>
+        message.conversationId === conversation.id
+        && message.senderId !== userId
+        && !message.readAt,
+      ).length,
+    };
+  }
+
+  async getOrCreateCourseConversation(course: Course, studentId: string): Promise<CourseConversationSummary> {
+    let conversation = Array.from(this.courseConversations.values()).find(
+      (item) => item.courseId === course.id && item.studentId === studentId,
+    );
+    if (!conversation) {
+      const now = new Date();
+      conversation = { id: randomUUID(), courseId: course.id, studentId, createdAt: now, updatedAt: now };
+      this.courseConversations.set(conversation.id, conversation);
+    }
+    const summary = this.mapCourseConversation(conversation, studentId);
+    if (!summary) throw new Error("Course conversation participants are unavailable");
+    return summary;
+  }
+
+  async getCourseConversation(id: string, userId: string): Promise<CourseConversationSummary | undefined> {
+    const conversation = this.courseConversations.get(id);
+    return conversation ? this.mapCourseConversation(conversation, userId) : undefined;
+  }
+
+  async getCourseConversationsForUser(userId: string): Promise<CourseConversationSummary[]> {
+    return Array.from(this.courseConversations.values())
+      .filter((conversation) => {
+        const course = this.courses.get(conversation.courseId);
+        return conversation.studentId === userId || course?.instructorId === userId;
+      })
+      .map((conversation) => this.mapCourseConversation(conversation, userId))
+      .filter((summary): summary is CourseConversationSummary => !!summary)
+      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+  }
+
+  async getCourseMessages(conversationId: string, limit = 100): Promise<CourseMessage[]> {
+    return Array.from(this.courseMessages.values())
+      .filter((message) => message.conversationId === conversationId)
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+      .slice(-limit);
+  }
+
+  async createCourseMessage(conversationId: string, senderId: string, body: string): Promise<CourseMessage> {
+    const user = this.users.get(senderId);
+    const conversation = this.courseConversations.get(conversationId);
+    if (!user || !conversation) throw new Error("Course conversation not found");
+    const message: CourseMessage = {
+      id: randomUUID(),
+      conversationId,
+      senderId,
+      senderName: user.fullName,
+      body,
+      createdAt: new Date(),
+      readAt: null,
+    };
+    this.courseMessages.set(message.id, message);
+    this.courseConversations.set(conversationId, { ...conversation, updatedAt: message.createdAt });
+    return message;
+  }
+
+  async markCourseMessagesRead(conversationId: string, readerId: string): Promise<void> {
+    const readAt = new Date();
+    for (const [id, message] of Array.from(this.courseMessages.entries())) {
+      if (message.conversationId === conversationId && message.senderId !== readerId && !message.readAt) {
+        this.courseMessages.set(id, { ...message, readAt });
+      }
+    }
   }
 
   // Quiz Attempts

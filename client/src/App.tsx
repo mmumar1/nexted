@@ -18,6 +18,7 @@ import ForgotPassword from "@/pages/forgot-password";
 import ResetPassword from "@/pages/reset-password";
 import Cbt from "@/pages/cbt";
 import Events from "@/pages/events";
+import Messages from "@/pages/messages";
 
 const LoginRoute = (props: any) => <Login {...props} />;
 const RegisterRoute = (props: any) => <Register {...props} />;
@@ -37,6 +38,8 @@ function Router() {
       <Route path="/quiz/:moduleId" component={Quiz} />
       <Route path="/projects" component={Projects} />
       <Route path="/events" component={Events} />
+      <Route path="/messages/:conversationId" component={Messages} />
+      <Route path="/messages" component={Messages} />
       <Route path="/cbt/attempt/:attemptId" component={Cbt} />
       <Route path="/cbt" component={Cbt} />
       <Route path="/profile" component={Profile} />

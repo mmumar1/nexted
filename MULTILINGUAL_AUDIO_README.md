@@ -1,17 +1,20 @@
 # Multilingual Lesson Audio and Translation
 
-This document records the proposed direction for lesson narration and translation in Learnpedia. It is a planning document only: the feature is not implemented, and it does not authorize code, schema, or migration changes.
+This document records the current lesson narration beta and future language roadmap for Learnpedia.
 
 ## Product direction
 
-Let an authorized teacher request reusable language support for a saved lesson. The agreed language direction is:
+The first beta provides browser-generated English speech for the saved lesson text:
 
-- **English:** generate spoken narration from the English lesson text.
-- **Hausa:** translate the English lesson into Hausa.
-- **Yoruba and Igbo:** keep these as planned language options, subject to provider and quality validation before they are offered.
+- **English:** students can play, pause, resume, and stop narration; teachers can preview narration while editing a lesson.
+- The browser uses its installed English voices, preferring Nigerian English where available and falling back to other English voices.
+- No external TTS API, API key, audio storage, or generated audio file is used. Voice availability and quality vary by device/browser.
+- Math narration only handles common notation in a simple text conversion; teachers should preview lessons with formulas before publishing.
+- **Hausa:** translation and narration are deferred.
+- **Yoruba and Igbo:** future options, subject to provider and native-speaker validation before they are offered.
 - **Nigerian Pidgin:** out of scope.
 
-The initial baseline is English audio plus Hausa translated text. Whether Hausa, Yoruba, and Igbo translations should also have generated audio is an open product decision; do not imply that a usable TTS voice exists until it has been tested with native speakers. If translated audio is required for the first release, confirm Hausa voice quality before implementation begins.
+The English narration player is marked **Beta**. It speaks lesson text directly and does not provide downloadable audio, a seek bar, or reliable operating-system media controls. A provider-backed audio service can be evaluated later if consistent voices or reusable audio files are needed.
 
 Keep the original lesson and its existing reading experience unchanged. Translations and audio are optional additions, not replacements for the lesson.
 
@@ -23,11 +26,11 @@ Keep the original lesson and its existing reading experience unchanged. Translat
 - The Markdown renderer supports math syntax and KaTeX display rendering.
 - Course/module access is already role- and enrollment-sensitive; generated content must follow those access rules.
 
-The implementation should reuse the existing module save, authorization, and lesson-rendering patterns rather than creating a separate lesson system.
+Any future provider-backed implementation should reuse the existing module save, authorization, and lesson-rendering patterns rather than creating a separate lesson system.
 
-## Recommended processing flow
+## Future generated-audio direction
 
-1. A teacher saves a module and explicitly requests English narration and/or Hausa translation.
+1. A teacher requests generated English narration and/or a Hausa translation.
 2. The server verifies that the requester is authorized to manage that course and module.
 3. A background job snapshots the saved content and its version, extracts narration-ready text, and prepares math for speech.
 4. The translation and speech tasks run separately so either can succeed or fail without falsely reporting the other as complete.

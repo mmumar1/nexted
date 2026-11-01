@@ -13,9 +13,11 @@ import {
   insertModuleCompletionSchema,
   insertQuizAttemptSchema,
   insertProjectSchema,
+  cbtExamTypeSchema,
   cbtQuestionInputSchema,
   quizQuestionImageUrlSchema,
   type CbtAttempt,
+  type CbtExamType,
   type CbtAttemptSelection,
   type CbtQuestion,
   type EventInput,
@@ -27,9 +29,11 @@ import { createSupabaseAdminClient, createSupabaseAuthClient } from "./supabase-
 import { compareModuleOrder } from "../shared/module-utils.js";
 import { normalizeQuizQuestionIndex } from "../shared/quiz-utils.js";
 import { isValidTimeZone } from "../shared/event-utils.js";
+import { canAccessCourseConversation, canStartCourseConversation, isMessagingStaffRole } from "./messaging-utils.js";
 import {
+  cbtAttemptRequestSchema,
   scoreCbtAttempt,
-  sampleCbtQuestions,
+  sampleCbtQuestionsAcrossTopics,
   shuffleCbtQuestions,
   toCbtAttemptHistoryEntry,
   toCbtStudentAttempt,
@@ -160,6 +164,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return undefined;
     }
 
+    return requester;
+  };
+
+  const requireAuthenticatedMessagingUser = async (req: Request, res: Response) => {
+    const authorization = req.header("Authorization");
+    const accessToken = authorization?.startsWith("Bearer ")
+      ? authorization.slice("Bearer ".length)
+      : undefined;
+    if (!accessToken) {
+      res.status(401).json({ error: "Supabase access token required" });
+      return undefined;
+    }
+
+    const { data, error } = await createSupabaseAuthClient().auth.getUser(accessToken);
+    if (error || !data.user) {
+      res.status(401).json({ error: "Invalid Supabase session" });
+      return undefined;
+    }
+
+    const requester = await storage.getUser(data.user.id);
+    if (!requester || (requester.role !== "student" && !isMessagingStaffRole(requester.role))) {
+      res.status(403).json({ error: "Messaging access required" });
+      return undefined;
+    }
     return requester;
   };
 
@@ -550,6 +578,83 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
       console.error("Failed to delete event:", error);
       res.status(500).json({ error: "Failed to delete event" });
+    }
+  });
+
+  app.get("/api/messages", async (req, res) => {
+    try {
+      const requester = await requireAuthenticatedMessagingUser(req, res);
+      if (!requester) return;
+      const conversations = await storage.getCourseConversationsForUser(requester.id);
+      const accessible = await Promise.all(conversations.map(async (conversation) => {
+        const course = await storage.getCourse(conversation.courseId);
+        return course && canAccessCourseConversation(requester, conversation, course) ? conversation : null;
+      }));
+      res.json(accessible.filter((conversation) => conversation !== null));
+    } catch (error) {
+      console.error("Failed to fetch course conversations:", error);
+      res.status(500).json({ error: "Failed to fetch messages" });
+    }
+  });
+
+  app.post("/api/messages/course/:courseId", async (req, res) => {
+    try {
+      const student = await requireAuthenticatedStudent(req, res);
+      if (!student) return;
+      const courseId = z.string().uuid().parse(req.params.courseId);
+      const course = await storage.getCourse(courseId);
+      if (!course || !canStartCourseConversation(student, course)) {
+        return res.status(404).json({ error: "Course messaging is unavailable" });
+      }
+      res.json(await storage.getOrCreateCourseConversation(course, student.id));
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
+      console.error("Failed to open course conversation:", error);
+      res.status(500).json({ error: "Failed to open course conversation" });
+    }
+  });
+
+  app.get("/api/messages/:id", async (req, res) => {
+    try {
+      const requester = await requireAuthenticatedMessagingUser(req, res);
+      if (!requester) return;
+      const id = z.string().uuid().parse(req.params.id);
+      const conversation = await storage.getCourseConversation(id, requester.id);
+      if (!conversation) return res.status(404).json({ error: "Conversation not found" });
+      const course = await storage.getCourse(conversation.courseId);
+      if (!course || !canAccessCourseConversation(requester, conversation, course)) {
+        return res.status(404).json({ error: "Conversation not found" });
+      }
+      await storage.markCourseMessagesRead(id, requester.id);
+      const [updatedConversation, messages] = await Promise.all([
+        storage.getCourseConversation(id, requester.id),
+        storage.getCourseMessages(id, 100),
+      ]);
+      res.json({ conversation: updatedConversation, messages });
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
+      console.error("Failed to fetch course messages:", error);
+      res.status(500).json({ error: "Failed to fetch conversation" });
+    }
+  });
+
+  app.post("/api/messages/:id", async (req, res) => {
+    try {
+      const requester = await requireAuthenticatedMessagingUser(req, res);
+      if (!requester) return;
+      const id = z.string().uuid().parse(req.params.id);
+      const { body } = z.object({ body: z.string().trim().min(1).max(4000) }).parse(req.body);
+      const conversation = await storage.getCourseConversation(id, requester.id);
+      if (!conversation) return res.status(404).json({ error: "Conversation not found" });
+      const course = await storage.getCourse(conversation.courseId);
+      if (!course || !canAccessCourseConversation(requester, conversation, course)) {
+        return res.status(404).json({ error: "Conversation not found" });
+      }
+      res.status(201).json(await storage.createCourseMessage(id, requester.id, body));
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
+      console.error("Failed to send course message:", error);
+      res.status(500).json({ error: "Failed to send message" });
     }
   });
 
@@ -1060,65 +1165,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const canManageCbtQuestion = (requester: { id: string; role: string }, createdBy: string) =>
     isSuperAdmin(requester.role) || requester.id === createdBy;
 
-  const cbtAttemptRequestSchema = z.object({
-    mode: z.enum(["self", "mock"]),
-    durationMinutes: z.number().int().min(15).max(120),
-    selections: z.array(z.object({
-      subject: z.string().trim().min(1).max(80),
-      examYear: z.number().int().min(1950).max(2100),
-      questionCount: z.number().int().min(1).max(200),
-    })).min(1).max(10),
-  }).superRefine((input, context) => {
-    if (input.mode === "mock" && input.durationMinutes !== 120) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["durationMinutes"],
-        message: "Mock tests use a 120-minute duration.",
-      });
-    }
-
-    const seen = new Set<string>();
-    let totalQuestions = 0;
-    input.selections.forEach((selection, index) => {
-      const key = `${selection.subject.toLowerCase()}\u0000${selection.examYear}`;
-      if (seen.has(key)) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["selections", index],
-          message: "A subject and year can only be selected once.",
-        });
-      }
-      seen.add(key);
-      totalQuestions += selection.questionCount;
-
-      if (input.mode === "mock") {
-        const standardCount = /^english(?:\b|$)/i.test(selection.subject) ? 60 : 40;
-        if (selection.questionCount !== standardCount) {
-          context.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ["selections", index, "questionCount"],
-            message: `${selection.subject} mock tests require ${standardCount} questions.`,
-          });
-        }
-      }
-    });
-
-    if (input.mode === "self" && ![15, 30, 45, 60, 90, 120].includes(input.durationMinutes)) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["durationMinutes"],
-        message: "Choose one of the available self-test durations.",
-      });
-    }
-    if (totalQuestions > 500) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["selections"],
-        message: "A single test cannot contain more than 500 questions.",
-      });
-    }
-  });
-
   app.get("/api/cbt/catalog", async (req, res) => {
     try {
       if (!(await requireAuthenticatedStudent(req, res))) return;
@@ -1188,37 +1234,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const canonicalSelections: CbtAttemptSelection[] = [];
       const questionsToUse: CbtQuestion[] = [];
       for (const selection of input.selections) {
-        const available = catalog.find((entry) =>
-          entry.examYear === selection.examYear
-          && entry.subject.toLowerCase() === selection.subject.toLowerCase(),
+        const matchingCatalog = catalog.filter((entry) =>
+          entry.examType === input.examType
+          && entry.subject.toLowerCase() === selection.subject.toLowerCase()
+          && (selection.examYear === undefined || entry.examYear === selection.examYear)
+          && (!selection.topics || selection.topics.includes(entry.topic)),
         );
-        if (!available) {
+        const availableCount = matchingCatalog.reduce((total, entry) => total + entry.count, 0);
+        const canonicalSubject = matchingCatalog[0]?.subject;
+        if (!canonicalSubject) {
           return res.status(422).json({
-            error: `No published ${selection.subject} questions are available for ${selection.examYear}.`,
+            error: `No published ${selection.subject} questions are available for this ${input.examType.toUpperCase()} selection.`,
           });
         }
-        if (selection.questionCount > available.count) {
+        if (selection.questionCount > availableCount) {
           return res.status(422).json({
-            error: `Only ${available.count} published ${available.subject} questions are available for ${selection.examYear}.`,
-            availableCount: available.count,
+            error: `Only ${availableCount} published ${canonicalSubject} questions match your selection.`,
+            availableCount,
           });
         }
-        canonicalSelections.push({ ...selection, subject: available.subject });
+        canonicalSelections.push({ ...selection, subject: canonicalSubject });
         const bank = await storage.getCbtQuestions({
-          subject: available.subject,
-          examYear: selection.examYear,
+          examType: input.examType,
+          subject: canonicalSubject,
+          ...(selection.examYear !== undefined ? { examYear: selection.examYear } : {}),
+          ...(selection.topics ? { topics: selection.topics } : { requireTopic: true }),
           status: "published",
         });
         if (bank.length < selection.questionCount) {
           return res.status(409).json({ error: "The question bank changed. Refresh the subject list and try again." });
         }
-        questionsToUse.push(...sampleCbtQuestions(bank, selection.questionCount));
+        questionsToUse.push(...sampleCbtQuestionsAcrossTopics(bank, selection.questionCount));
       }
 
       const startedAt = new Date();
       const expiresAt = new Date(startedAt.getTime() + input.durationMinutes * 60_000);
       const attempt = await storage.createCbtAttempt({
         userId: student.id,
+        examType: input.examType,
         mode: input.mode,
         selections: canonicalSelections,
         durationMinutes: input.durationMinutes,
@@ -1378,8 +1431,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const requester = await requireAuthenticatedStaff(req, res);
       if (!requester) return;
       const input = z.object({
+        examType: cbtExamTypeSchema,
         subject: z.string().trim().min(1).max(80),
         examYear: z.number().int().min(1950).max(2100),
+        topic: z.string().trim().min(1).max(120),
         questions: z.array(z.object({
           question: z.string(),
           questionImageUrl: z.string().optional(),
@@ -1391,8 +1446,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }).parse(req.body);
       const questions = input.questions.map((question) => cbtQuestionInputSchema.parse({
         ...question,
+        examType: input.examType,
         subject: input.subject,
         examYear: input.examYear,
+        topic: input.topic,
         questionImageUrl: question.questionImageUrl || undefined,
         explanation: question.explanation || undefined,
         explanationImageUrl: question.explanationImageUrl || undefined,
@@ -1405,6 +1462,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
       res.status(500).json({ error: "Failed to import CBT questions" });
+    }
+  });
+
+  app.post("/api/admin/cbt/questions/bulk-classify", async (req, res) => {
+    try {
+      const requester = await requireAuthenticatedStaff(req, res);
+      if (!requester) return;
+      const input = z.object({
+        ids: z.array(z.string().uuid()).min(1).max(500),
+        examType: cbtExamTypeSchema,
+        topic: z.string().trim().min(1).max(120),
+      }).parse(req.body);
+      if (new Set(input.ids).size !== input.ids.length) {
+        return res.status(400).json({ error: "Each question can only be selected once." });
+      }
+
+      const selectedQuestions = await storage.getCbtQuestions({
+        ids: input.ids,
+        ...(!isSuperAdmin(requester.role) ? { createdBy: requester.id } : {}),
+      });
+      if (selectedQuestions.length !== input.ids.length) {
+        return res.status(403).json({ error: "You can only manage CBT questions you created." });
+      }
+
+      const updated = await storage.bulkClassifyCbtQuestions(
+        input.ids,
+        input.examType,
+        input.topic,
+        requester.id,
+        isSuperAdmin(requester.role) ? undefined : requester.id,
+      );
+      if (updated !== input.ids.length) {
+        return res.status(409).json({ error: "Some selected questions changed before they could be reclassified. Refresh the question bank and try again." });
+      }
+      res.json({ updated });
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
+      res.status(500).json({ error: "Failed to bulk classify CBT questions" });
     }
   });
 

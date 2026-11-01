@@ -1,21 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useRoute } from "wouter";
-import { ArrowLeft, ArrowRight, Check, Clock3, RotateCcw, Send, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, Check, Clock3, RotateCcw, Send, X } from "lucide-react";
 import { Navbar } from "@/components/navbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth-context";
 import { apiRequest } from "@/lib/queryClient";
-import type { CbtAttemptMode, CbtAttemptSelection, CbtAttemptStatus, CbtQuestionCatalogEntry } from "@shared/schema";
+import type { CbtAttemptMode, CbtAttemptSelection, CbtAttemptStatus, CbtExamType, CbtQuestionCatalogEntry } from "@shared/schema";
 
 interface StudentQuestion {
   id: string;
   subject: string;
   examYear: number;
+  topic?: string | null;
   question: string;
   questionImageUrl: string | null;
   options: string[];
@@ -27,6 +29,7 @@ interface StudentQuestion {
 
 interface StudentAttempt {
   id: string;
+  examType?: CbtExamType | null;
   mode: CbtAttemptMode;
   selections: CbtAttemptSelection[];
   durationMinutes: number;
@@ -43,6 +46,7 @@ interface StudentAttempt {
 
 interface AttemptHistoryEntry {
   id: string;
+  examType?: CbtExamType | null;
   mode: CbtAttemptMode;
   selections: CbtAttemptSelection[];
   durationMinutes: number;
@@ -58,6 +62,27 @@ const durationOptions = [15, 30, 45, 60, 90, 120];
 
 function standardMockCount(subject: string): number {
   return /^english(?:\b|$)/i.test(subject) ? 60 : 40;
+}
+
+function isEnglishSubject(subject: string): boolean {
+  return /^english(?:\b|$)/i.test(subject);
+}
+
+function getAvailableQuestionCount(
+  catalog: CbtQuestionCatalogEntry[],
+  examType: CbtExamType,
+  subject: string,
+  examYear?: number,
+  topics?: string[],
+): number {
+  return catalog
+    .filter((entry) =>
+      entry.examType === examType
+      && entry.subject.toLowerCase() === subject.toLowerCase()
+      && (examYear === undefined || entry.examYear === examYear)
+      && (!topics || topics.includes(entry.topic)),
+    )
+    .reduce((total, entry) => total + entry.count, 0);
 }
 
 function formatTime(seconds: number): string {
@@ -86,10 +111,13 @@ export default function Cbt() {
   const { user, isAuthenticated } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [examType, setExamType] = useState<CbtExamType | null>(null);
   const [mode, setMode] = useState<CbtAttemptMode>("self");
   const [durationMinutes, setDurationMinutes] = useState(30);
   const [subject, setSubject] = useState("");
   const [examYear, setExamYear] = useState("");
+  const [allTopics, setAllTopics] = useState(true);
+  const [selectedTopics, setSelectedTopics] = useState<string[]>([]);
   const [questionCount, setQuestionCount] = useState("10");
   const [selections, setSelections] = useState<CbtAttemptSelection[]>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
@@ -125,24 +153,51 @@ export default function Cbt() {
   });
 
   const catalog = catalogQuery.data ?? [];
+  const examCatalog = examType ? catalog.filter((entry) => entry.examType === examType) : [];
   const subjects = useMemo(
-    () => Array.from(new Set(catalog.map((entry) => entry.subject))).sort((a, b) => a.localeCompare(b)),
-    [catalog],
+    () => Array.from(new Set(examCatalog.map((entry) => entry.subject))).sort((a, b) => a.localeCompare(b)),
+    [examCatalog],
   );
-  const years = catalog.filter((entry) => entry.subject === subject).map((entry) => entry.examYear).sort((a, b) => b - a);
-  const selectedCatalogEntry = catalog.find((entry) => entry.subject === subject && entry.examYear === Number(examYear));
+  const selectableSubjects = useMemo(
+    () => subjects
+      .filter((item) => !selections.some((selection) => selection.subject.toLowerCase() === item.toLowerCase()))
+      .filter((item) => mode !== "mock" || !isEnglishSubject(item)),
+    [subjects, selections, mode],
+  );
+  const years = Array.from(new Set(examCatalog.filter((entry) => entry.subject === subject).map((entry) => entry.examYear))).sort((a, b) => b - a);
+  const topics = Array.from(new Set(examCatalog
+    .filter((entry) => entry.subject === subject && entry.examYear === Number(examYear))
+    .map((entry) => entry.topic))).sort((a, b) => a.localeCompare(b));
+  const currentQuestionPoolCount = examType
+    ? getAvailableQuestionCount(
+      catalog,
+      examType,
+      subject,
+      mode === "self" ? Number(examYear) : undefined,
+      mode === "self" && !allTopics ? selectedTopics : undefined,
+    )
+    : 0;
   const activeAttempt = activeAttemptQuery.data?.status === "in_progress" ? activeAttemptQuery.data : null;
   const attempt = attemptQuery.data;
-  const selectionsAvailable = selections.every((selection) =>
-    selection.questionCount <= (catalog.find((entry) =>
-      entry.subject === selection.subject && entry.examYear === selection.examYear,
-    )?.count ?? 0),
-  );
+  const selectionsAvailable = !!examType
+    && selections.every((selection) =>
+      selection.questionCount <= getAvailableQuestionCount(
+        catalog,
+        examType,
+        selection.subject,
+        selection.examYear,
+        selection.topics,
+      ),
+    )
+    && (mode !== "mock" || (
+      selections.length === 4
+      && selections.some((selection) => isEnglishSubject(selection.subject))
+    ));
 
   useEffect(() => {
-    if (!subjects.length) return;
-    if (!subject || !subjects.includes(subject)) setSubject(subjects[0]);
-  }, [subjects, subject]);
+    if (subject && selectableSubjects.some((item) => item.toLowerCase() === subject.toLowerCase())) return;
+    setSubject(selectableSubjects[0] ?? "");
+  }, [selectableSubjects, subject]);
 
   useEffect(() => {
     if (!years.length) {
@@ -153,9 +208,22 @@ export default function Cbt() {
   }, [years, examYear]);
 
   useEffect(() => {
+    if (mode !== "mock" || isEnglishSubject(subject)) return;
+    const firstUnselectedSubject = subjects.find((item) =>
+      !isEnglishSubject(item) && !selections.some((selection) => selection.subject === item),
+    );
+    if (firstUnselectedSubject) setSubject(firstUnselectedSubject);
+  }, [mode, subject, subjects, selections]);
+
+  useEffect(() => {
     if (mode === "mock") setDurationMinutes(120);
     else if (durationMinutes === 120) setDurationMinutes(30);
   }, [mode]);
+
+  useEffect(() => {
+    setAllTopics(true);
+    setSelectedTopics([]);
+  }, [examType, subject, examYear]);
 
   useEffect(() => {
     if (attempt) {
@@ -171,6 +239,7 @@ export default function Cbt() {
 
   const startAttempt = useMutation({
     mutationFn: () => apiRequest("POST", "/api/cbt/attempts", {
+      examType,
       mode,
       durationMinutes: mode === "mock" ? 120 : durationMinutes,
       selections,
@@ -282,7 +351,7 @@ export default function Cbt() {
   }
 
   const addSelection = () => {
-    if (!selectedCatalogEntry) return;
+    if (!examType || !subject) return;
     const count = mode === "mock" ? standardMockCount(subject) : Number(questionCount);
     if (!Number.isInteger(count) || count < 1) {
       toast({ title: "Choose at least one question", variant: "destructive" });
@@ -292,16 +361,20 @@ export default function Cbt() {
       toast({ title: "A self-test can contain up to 200 questions per subject", variant: "destructive" });
       return;
     }
-    if (selections.some((selection) => selection.subject === subject && selection.examYear === Number(examYear))) {
-      toast({ title: "That subject and year are already selected", variant: "destructive" });
+    if (selections.some((selection) => selection.subject.toLowerCase() === subject.toLowerCase())) {
+      toast({ title: "That subject is already selected", variant: "destructive" });
       return;
     }
-    if (count > selectedCatalogEntry.count) {
+    if (count > currentQuestionPoolCount) {
       toast({
         title: "Not enough published questions",
-        description: `There are ${selectedCatalogEntry.count} available for this subject and year.`,
+        description: `There are ${currentQuestionPoolCount} questions available for this selection.`,
         variant: "destructive",
       });
+      return;
+    }
+    if (selections.length >= 4) {
+      toast({ title: "You can select up to four subjects", variant: "destructive" });
       return;
     }
     if (selections.reduce((total, selection) => total + selection.questionCount, 0) + count > 500) {
@@ -310,7 +383,10 @@ export default function Cbt() {
     }
     setSelections((current) => [...current, {
       subject,
-      examYear: Number(examYear),
+      ...(mode === "self" ? {
+        examYear: Number(examYear),
+        ...(!allTopics ? { topics: selectedTopics } : {}),
+      } : {}),
       questionCount: count,
     }]);
   };
@@ -334,6 +410,24 @@ export default function Cbt() {
     saveAnswer.mutate({ questionId, selectedOption });
   };
 
+  const changeMode = (nextMode: CbtAttemptMode) => {
+    setMode(nextMode);
+    if (nextMode === "self") {
+      setSelections([]);
+      return;
+    }
+    const english = subjects.find(isEnglishSubject);
+    setSelections(english ? [{ subject: english, questionCount: standardMockCount(english) }] : []);
+  };
+
+  const selectExam = (nextExamType: CbtExamType) => {
+    setExamType(nextExamType);
+    setMode("self");
+    setSelections([]);
+    setSubject("");
+    setExamYear("");
+  };
+
   const onAttemptRoute = !!attemptId;
   const backButton = (
     <Button variant="ghost" className="mb-5" onClick={() => setLocation("/cbt")}>
@@ -350,8 +444,10 @@ export default function Cbt() {
           <>
             <header>
               <p className="text-sm font-medium text-primary">Practice at your pace</p>
-              <h1 className="mt-1 text-3xl font-bold tracking-tight">CBT practice</h1>
-              <p className="mt-2 text-muted-foreground">Build a self-test from published questions or take a standard mock test.</p>
+              <h1 className="mt-1 flex items-center gap-2 text-3xl font-bold tracking-tight">
+                CBT practice <Badge variant="secondary">Beta</Badge>
+              </h1>
+              <p className="mt-2 text-muted-foreground">Choose an exam to build a subject-based practice test.</p>
             </header>
 
             {activeAttempt && (
@@ -359,7 +455,7 @@ export default function Cbt() {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2"><Clock3 className="h-5 w-5 text-primary" />You have a test in progress</CardTitle>
                   <CardDescription>
-                    {activeAttempt.totalQuestions} questions · {activeAttempt.mode === "mock" ? "Mock test" : "Self-test"} · Started {new Date(activeAttempt.startedAt).toLocaleString()}
+                    {activeAttempt.totalQuestions} questions · {activeAttempt.examType === "jamb" ? "JAMB/UTME" : activeAttempt.examType === "waec" ? "WAEC/NECO" : "CBT"} · {activeAttempt.mode === "mock" ? "Mock test" : "Self-test"} · Started {new Date(activeAttempt.startedAt).toLocaleString()}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -368,134 +464,199 @@ export default function Cbt() {
               </Card>
             )}
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Create a test</CardTitle>
-                <CardDescription>Choose subjects and a year. Answers are saved automatically and the timer is enforced by the server.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <button
-                    type="button"
-                    onClick={() => setMode("self")}
-                    className={`rounded-lg border p-4 text-left transition-colors ${mode === "self" ? "border-primary bg-primary/5" : "hover:bg-muted/50"}`}
-                    aria-pressed={mode === "self"}
-                  >
-                    <span className="block font-semibold">Self-test</span>
-                    <span className="mt-1 block text-sm text-muted-foreground">Choose the number of questions and duration.</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMode("mock");
-                      setSelections((current) => current.map((selection) => ({
-                        ...selection,
-                        questionCount: standardMockCount(selection.subject),
-                      })));
-                    }}
-                    className={`rounded-lg border p-4 text-left transition-colors ${mode === "mock" ? "border-primary bg-primary/5" : "hover:bg-muted/50"}`}
-                    aria-pressed={mode === "mock"}
-                  >
-                    <span className="block font-semibold">Standard mock</span>
-                    <span className="mt-1 block text-sm text-muted-foreground">60 English questions, 40 per other subject, 120 minutes.</span>
-                  </button>
+            {!examType ? (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <button type="button" onClick={() => selectExam("jamb")} className="rounded-xl border p-6 text-left transition-colors hover:border-primary hover:bg-primary/5">
+                  <BookOpen className="mb-4 h-8 w-8 text-primary" />
+                  <span className="block text-xl font-semibold">Practice for JAMB/UTME</span>
+                  <span className="mt-2 block text-sm text-muted-foreground">Choose subjects and build a self-test or mock exam.</span>
+                </button>
+                <button type="button" onClick={() => selectExam("waec")} className="rounded-xl border p-6 text-left transition-colors hover:border-primary hover:bg-primary/5">
+                  <BookOpen className="mb-4 h-8 w-8 text-primary" />
+                  <span className="block text-xl font-semibold">Practice for WAEC/NECO</span>
+                  <span className="mt-2 block text-sm text-muted-foreground">Choose subjects and build a self-test or mock exam.</span>
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium text-primary">Exam practice</p>
+                    <h2 className="text-2xl font-bold">{examType === "jamb" ? "Practice for JAMB/UTME" : "Practice for WAEC/NECO"}</h2>
+                  </div>
+                  <Button type="button" variant="outline" onClick={() => setExamType(null)}><ArrowLeft className="mr-2 h-4 w-4" />Choose another exam</Button>
                 </div>
 
-                {catalogQuery.isPending && <p className="text-sm text-muted-foreground">Loading available subjects...</p>}
-                {catalogQuery.isError && <p role="alert" className="text-sm text-destructive">Could not load the CBT question bank. Refresh to try again.</p>}
-                {!catalogQuery.isPending && !catalogQuery.isError && catalog.length === 0 && (
-                  <div className="rounded-lg border border-dashed p-6 text-center">
-                    <p className="font-medium">No published questions are available yet.</p>
-                    <p className="mt-1 text-sm text-muted-foreground">Your instructor will publish questions here when they are ready.</p>
-                  </div>
-                )}
-
-                {catalog.length > 0 && (
-                  <>
-                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="cbt-subject">Subject</Label>
-                        <select id="cbt-subject" className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={subject} onChange={(event) => setSubject(event.target.value)}>
-                          {subjects.map((item) => <option key={item} value={item}>{item}</option>)}
-                        </select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="cbt-year">Exam year</Label>
-                        <select id="cbt-year" className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={examYear} onChange={(event) => setExamYear(event.target.value)}>
-                          {years.map((year) => <option key={year} value={year}>{year}</option>)}
-                        </select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="cbt-question-count">Questions</Label>
-                        {mode === "mock" ? (
-                          <div id="cbt-question-count" className="flex h-10 items-center rounded-md border bg-muted/30 px-3 text-sm">
-                            {standardMockCount(subject)} standard questions
-                          </div>
-                        ) : (
-                          <Input
-                            id="cbt-question-count"
-                            type="number"
-                            min={1}
-                            max={Math.min(selectedCatalogEntry?.count ?? 200, 200)}
-                            value={questionCount}
-                            onChange={(event) => setQuestionCount(event.target.value)}
-                          />
-                        )}
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="cbt-duration">Duration</Label>
-                        {mode === "mock" ? (
-                          <div id="cbt-duration" className="flex h-10 items-center rounded-md border bg-muted/30 px-3 text-sm">120 minutes</div>
-                        ) : (
-                          <select id="cbt-duration" className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={durationMinutes} onChange={(event) => setDurationMinutes(Number(event.target.value))}>
-                            {durationOptions.map((minutes) => <option key={minutes} value={minutes}>{minutes} minutes</option>)}
-                          </select>
-                        )}
-                      </div>
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Create a test</CardTitle>
+                    <CardDescription>Choose up to four subjects. Self-tests let you select topics and year; mocks use the standard subject question counts.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <button type="button" onClick={() => changeMode("self")} className={`rounded-lg border p-4 text-left transition-colors ${mode === "self" ? "border-primary bg-primary/5" : "hover:bg-muted/50"}`} aria-pressed={mode === "self"}>
+                        <span className="block font-semibold">Self-test</span>
+                        <span className="mt-1 block text-sm text-muted-foreground">Choose up to four subjects, topics, year, question count, and duration.</span>
+                      </button>
+                      <button type="button" onClick={() => changeMode("mock")} className={`rounded-lg border p-4 text-left transition-colors ${mode === "mock" ? "border-primary bg-primary/5" : "hover:bg-muted/50"}`} aria-pressed={mode === "mock"}>
+                        <span className="block font-semibold">Mock test</span>
+                        <span className="mt-1 block text-sm text-muted-foreground">English is included with three other subjects · 120 minutes.</span>
+                      </button>
                     </div>
 
-                    {selectedCatalogEntry && (
-                      <p className="text-sm text-muted-foreground">
-                        {selectedCatalogEntry.count} published question{selectedCatalogEntry.count === 1 ? "" : "s"} available for {subject}, {examYear}.
-                      </p>
+                    {catalogQuery.isPending && <p className="text-sm text-muted-foreground">Loading available subjects...</p>}
+                    {catalogQuery.isError && <p role="alert" className="text-sm text-destructive">Could not load the CBT question bank. Refresh to try again.</p>}
+                    {!catalogQuery.isPending && !catalogQuery.isError && examCatalog.length === 0 && (
+                      <div className="rounded-lg border border-dashed p-6 text-center">
+                        <p className="font-medium">No published questions are available for this exam yet.</p>
+                        <p className="mt-1 text-sm text-muted-foreground">Your instructor will classify and publish questions here when they are ready.</p>
+                      </div>
                     )}
-                    <Button type="button" variant="outline" onClick={addSelection} disabled={!selectedCatalogEntry}>
-                      Add subject
-                    </Button>
 
-                    <div className="space-y-2">
-                      <h2 className="font-semibold">Selected subjects</h2>
-                      {selections.length === 0 ? (
-                        <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">Add at least one subject to continue.</p>
-                      ) : (
-                        <ul className="space-y-2">
-                          {selections.map((selection) => (
-                            <li key={`${selection.subject}-${selection.examYear}`} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
-                              <span className="font-medium">{selection.subject} · {selection.examYear}</span>
-                              <span className="text-sm text-muted-foreground">{selection.questionCount} questions</span>
-                              <Button type="button" variant="ghost" size="sm" onClick={() => setSelections((current) => current.filter((item) => item !== selection))}>Remove</Button>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                      {selections.length > 0 && !selectionsAvailable && (
-                        <p role="alert" className="text-sm text-destructive">
-                          The published question bank does not yet have enough questions for the selected mock standard.
+                    {examCatalog.length > 0 && (
+                      <>
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          <div className="space-y-2">
+                            <Label htmlFor="cbt-subject">Subject</Label>
+                            <select
+                              id="cbt-subject"
+                              className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                              value={subject}
+                              onChange={(event) => setSubject(event.target.value)}
+                              disabled={selectableSubjects.length === 0}
+                            >
+                              {selectableSubjects.map((item) => <option key={item} value={item}>{item}</option>)}
+                            </select>
+                          </div>
+                          {mode === "self" && (
+                            <div className="space-y-2">
+                              <Label htmlFor="cbt-year">Exam year</Label>
+                              <select id="cbt-year" className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={examYear} onChange={(event) => setExamYear(event.target.value)}>
+                                {years.map((year) => <option key={year} value={year}>{year}</option>)}
+                              </select>
+                            </div>
+                          )}
+                          <div className="space-y-2">
+                            <Label htmlFor="cbt-question-count">Questions for {subject || "subject"}</Label>
+                            {mode === "mock" ? (
+                              <div id="cbt-question-count" className="flex h-10 items-center rounded-md border bg-muted/30 px-3 text-sm">
+                                {subject ? `${standardMockCount(subject)} standard questions` : "Select a subject"}
+                              </div>
+                            ) : (
+                              <Input id="cbt-question-count" type="number" min={1} max={Math.min(currentQuestionPoolCount, 200)} value={questionCount} onChange={(event) => setQuestionCount(event.target.value)} />
+                            )}
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="cbt-duration">Duration</Label>
+                            {mode === "mock" ? (
+                              <div id="cbt-duration" className="flex h-10 items-center rounded-md border bg-muted/30 px-3 text-sm">120 minutes</div>
+                            ) : (
+                              <select id="cbt-duration" className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={durationMinutes} onChange={(event) => setDurationMinutes(Number(event.target.value))}>
+                                {durationOptions.map((minutes) => <option key={minutes} value={minutes}>{minutes} minutes</option>)}
+                              </select>
+                            )}
+                          </div>
+                        </div>
+
+                        {mode === "self" && (
+                          <fieldset className="space-y-3 rounded-lg border p-4">
+                            <legend className="px-1 text-sm font-medium">Topics for {subject || "this subject"}</legend>
+                            <div className="flex flex-wrap gap-5">
+                              <label className="flex items-center gap-2 text-sm">
+                                <input type="radio" name="cbt-topic-mode" checked={allTopics} onChange={() => setAllTopics(true)} />
+                                All topics
+                              </label>
+                              <label className="flex items-center gap-2 text-sm">
+                                <input type="radio" name="cbt-topic-mode" checked={!allTopics} onChange={() => setAllTopics(false)} />
+                                Select topics
+                              </label>
+                            </div>
+                            {!allTopics && (
+                              topics.length ? (
+                                <div className="grid gap-2 sm:grid-cols-2">
+                                  {topics.map((topic) => (
+                                    <label key={topic} className="flex items-center gap-2 text-sm">
+                                      <input
+                                        type="checkbox"
+                                        checked={selectedTopics.includes(topic)}
+                                        onChange={(event) => setSelectedTopics((current) => event.target.checked
+                                          ? [...current, topic]
+                                          : current.filter((item) => item !== topic))}
+                                      />
+                                      {topic}
+                                    </label>
+                                  ))}
+                                </div>
+                              ) : <p className="text-sm text-muted-foreground">No topics are available for this subject and year.</p>
+                            )}
+                          </fieldset>
+                        )}
+
+                        <p className="text-sm text-muted-foreground">
+                          {currentQuestionPoolCount} published question{currentQuestionPoolCount === 1 ? "" : "s"} available for {subject || "this subject"}
+                          {mode === "self" ? ` in ${examYear || "the selected year"}` : " across available years"}.
                         </p>
-                      )}
-                    </div>
+                        {mode === "mock" && !selections.some((selection) => isEnglishSubject(selection.subject)) && (
+                          <p role="alert" className="text-sm text-destructive">An English subject with 60 published questions is required to start a mock.</p>
+                        )}
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={addSelection}
+                          disabled={
+                            !subject
+                            || selections.length >= 4
+                            || selections.some((selection) => selection.subject.toLowerCase() === subject.toLowerCase())
+                            || !currentQuestionPoolCount
+                            || (mode === "self" && !allTopics && selectedTopics.length === 0)
+                            || (mode === "self" && Number(questionCount) > currentQuestionPoolCount)
+                            || (mode === "mock" && currentQuestionPoolCount < standardMockCount(subject))
+                          }
+                        >
+                          {mode === "mock" && selections.some((selection) => isEnglishSubject(selection.subject)) && selections.length === 1 ? "Add one of three other subjects" : "Add subject"}
+                        </Button>
 
-                    <Button
-                      type="button"
-                      onClick={() => startAttempt.mutate()}
-                      disabled={selections.length === 0 || !selectionsAvailable || startAttempt.isPending || !!activeAttempt}
-                    >
-                      {startAttempt.isPending ? "Preparing test..." : "Start test"}
-                    </Button>
-                  </>
-                )}
-              </CardContent>
-            </Card>
+                        <div className="space-y-2">
+                          <h3 className="font-semibold">Selected subjects ({selections.length}/4)</h3>
+                          {selections.length === 0 ? (
+                            <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">Add at least one subject to continue.</p>
+                          ) : (
+                            <ul className="space-y-2">
+                              {selections.map((selection) => (
+                                <li key={selection.subject} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
+                                  <div>
+                                    <span className="font-medium">{selection.subject}</span>
+                                    {selection.examYear && <span className="text-sm text-muted-foreground"> · {selection.examYear}</span>}
+                                    {mode === "self" && <p className="text-xs text-muted-foreground">{selection.topics?.length ? selection.topics.join(", ") : "All topics"}</p>}
+                                  </div>
+                                  <span className="text-sm text-muted-foreground">{selection.questionCount} questions</span>
+                                  {!(mode === "mock" && isEnglishSubject(selection.subject)) && (
+                                    <Button type="button" variant="ghost" size="sm" onClick={() => setSelections((current) => current.filter((item) => item !== selection))}>Remove</Button>
+                                  )}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                          {selections.length > 0 && !selectionsAvailable && (
+                            <p role="alert" className="text-sm text-destructive">
+                              {mode === "mock" ? "A mock needs English and three other subjects with enough published questions." : "The question bank no longer has enough questions for one or more selections."}
+                            </p>
+                          )}
+                        </div>
+
+                        <Button
+                          type="button"
+                          onClick={() => startAttempt.mutate()}
+                          disabled={!examType || selections.length === 0 || !selectionsAvailable || startAttempt.isPending || !!activeAttempt}
+                        >
+                          {startAttempt.isPending ? "Preparing test..." : "Start test"}
+                        </Button>
+                      </>
+                    )}
+                  </CardContent>
+                </Card>
+              </>
+            )}
 
             <Card>
               <CardHeader>
@@ -514,7 +675,7 @@ export default function Cbt() {
                       <div>
                         <p className="font-medium">{entry.mode === "mock" ? "Standard mock" : "Self-test"} · {entry.totalQuestions} questions</p>
                         <p className="text-sm text-muted-foreground">
-                          {entry.selections.map((item) => `${item.subject} ${item.examYear}`).join(" · ")} · {new Date(entry.startedAt).toLocaleString()}
+                          {entry.examType === "jamb" ? "JAMB/UTME" : entry.examType === "waec" ? "WAEC/NECO" : "CBT"} · {entry.selections.map((item) => `${item.subject}${item.examYear ? ` ${item.examYear}` : ""}`).join(" · ")} · {new Date(entry.startedAt).toLocaleString()}
                         </p>
                         {entry.status !== "in_progress" && <p className="mt-1 text-sm">Score: {entry.score ?? 0}/{entry.totalQuestions}</p>}
                       </div>
@@ -599,7 +760,7 @@ function AttemptView({
           <CardHeader>
             <CardTitle>{attempt.status === "expired" ? "Time is up" : "Test submitted"}</CardTitle>
             <CardDescription>
-              {attempt.mode === "mock" ? "Standard mock test" : "Self-test"} · {attempt.selections.map((item) => `${item.subject} ${item.examYear}`).join(" · ")}
+              {attempt.examType === "jamb" ? "JAMB/UTME" : attempt.examType === "waec" ? "WAEC/NECO" : "CBT"} · {attempt.mode === "mock" ? "Standard mock test" : "Self-test"} · {attempt.selections.map((item) => `${item.subject}${item.examYear ? ` ${item.examYear}` : ""}`).join(" · ")}
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4 sm:grid-cols-3">
@@ -630,7 +791,7 @@ function AttemptView({
             return (
               <Card key={question.id}>
                 <CardHeader>
-                  <CardDescription>Question {index + 1} · {question.subject} · {question.examYear}</CardDescription>
+                  <CardDescription>Question {index + 1} · {question.subject}{question.topic ? ` · ${question.topic}` : ""}{question.examYear ? ` · ${question.examYear}` : ""}</CardDescription>
                   <CardTitle className="text-lg font-medium">{question.question}</CardTitle>
                   {question.questionImageUrl && <img src={question.questionImageUrl} alt={`Question ${index + 1}`} className="max-h-80 max-w-full rounded-md object-contain" />}
                 </CardHeader>
@@ -673,7 +834,7 @@ function AttemptView({
         <CardContent className="flex flex-wrap items-center justify-between gap-4 py-4">
           <div>
             <p className="font-semibold">{attempt.mode === "mock" ? "Standard mock" : "Self-test"}</p>
-            <p className="text-sm text-muted-foreground">{attempt.selections.map((item) => `${item.subject} ${item.examYear}`).join(" · ")}</p>
+            <p className="text-sm text-muted-foreground">{attempt.examType === "jamb" ? "JAMB/UTME" : attempt.examType === "waec" ? "WAEC/NECO" : "CBT"} · {attempt.selections.map((item) => `${item.subject}${item.examYear ? ` ${item.examYear}` : ""}`).join(" · ")}</p>
           </div>
           <div className={`flex items-center gap-2 rounded-md px-3 py-2 font-mono text-lg font-bold ${remainingSeconds !== null && remainingSeconds <= 60 ? "bg-destructive/10 text-destructive" : "bg-muted/50"}`} role="timer" aria-live="off">
             <Clock3 className="h-5 w-5" />{formatTime(remainingSeconds ?? 0)}
@@ -685,7 +846,7 @@ function AttemptView({
         <Card>
           <CardHeader>
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <CardDescription>Question {currentQuestionIndex + 1} of {attempt.totalQuestions} · {question.subject} · {question.examYear}</CardDescription>
+              <CardDescription>Question {currentQuestionIndex + 1} of {attempt.totalQuestions} · {question.subject}{question.topic ? ` · ${question.topic}` : ""}{question.examYear ? ` · ${question.examYear}` : ""}</CardDescription>
               <CardDescription>{answeredCount}/{attempt.totalQuestions} answered{isSaving ? " · Saving..." : ""}</CardDescription>
             </div>
             <CardTitle className="text-xl font-semibold leading-relaxed">{question.question}</CardTitle>

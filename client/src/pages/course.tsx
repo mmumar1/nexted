@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { useRoute, useLocation } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Navbar } from "@/components/navbar";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ChevronLeft, Menu } from "lucide-react";
+import { ChevronLeft, Menu, MessageCircle } from "lucide-react";
 import { Link } from "wouter";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useAuth } from "@/lib/auth-context";
@@ -14,12 +15,15 @@ import { ModuleContent } from "@/components/course/module-content";
 import { ModuleSidebar, type CourseModuleItem } from "@/components/course/module-sidebar";
 import { isModuleUnlocked } from "@/lib/access-rules";
 import { compareModuleOrder } from "@/lib/module-utils";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 export default function CoursePage() {
   const [, legacyParams] = useRoute("/course/:id");
   const [, moduleParams] = useRoute("/course/:courseId/module/:moduleId");
   const [, setLocation] = useLocation();
   const { user, isAuthenticated } = useAuth();
+  const { toast } = useToast();
   const [isModuleSheetOpen, setModuleSheetOpen] = useState(false);
   const courseId = moduleParams?.courseId || legacyParams?.id || "1";
   const requestedModuleId = moduleParams?.moduleId;
@@ -53,6 +57,15 @@ export default function CoursePage() {
   const { data: dashboardCourses } = useQuery<Array<{ id: string; isUnlocked: boolean }>>({
     queryKey: ["/api/dashboard", user?.id],
     enabled: !!user?.id,
+  });
+  const openConversation = useMutation({
+    mutationFn: () => apiRequest("POST", `/api/messages/course/${courseId}`),
+    onSuccess: (conversation: { id: string }) => setLocation(`/messages/${conversation.id}`),
+    onError: (error: Error) => toast({
+      title: "Could not open instructor messages",
+      description: error.message,
+      variant: "destructive",
+    }),
   });
 
   if (!user) return null;
@@ -165,6 +178,18 @@ export default function CoursePage() {
               <p className="text-lg text-muted-foreground mb-6">
                 {course.description}
               </p>
+              {user.role === "student" && course.isPublished && course.instructorId && (
+                <Button
+                  variant="outline"
+                  className="gap-2"
+                  disabled={openConversation.isPending}
+                  onClick={() => openConversation.mutate()}
+                >
+                  <MessageCircle className="h-4 w-4" />
+                  {openConversation.isPending ? "Opening conversation..." : "Message instructor"}
+                  <Badge variant="secondary">Beta</Badge>
+                </Button>
+              )}
             </>
           ) : (
             <>

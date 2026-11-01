@@ -82,8 +82,10 @@ create table public.quizzes (
 
 create table public.cbt_questions (
   id uuid primary key default gen_random_uuid(),
+  exam_type text check (exam_type in ('jamb', 'waec') or exam_type is null),
   subject text not null check (length(btrim(subject)) between 1 and 80),
   exam_year integer not null check (exam_year between 1950 and 2100),
+  topic text check (topic is null or length(btrim(topic)) between 1 and 120),
   question text not null check (length(btrim(question)) between 1 and 10000),
   question_image_url text,
   options jsonb not null check (
@@ -108,6 +110,7 @@ create table public.cbt_questions (
 create table public.cbt_attempts (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.profiles(id) on delete cascade,
+  exam_type text check (exam_type in ('jamb', 'waec') or exam_type is null),
   mode text not null check (mode in ('self', 'mock')),
   selections jsonb not null check (jsonb_typeof(selections) = 'array'),
   duration_minutes integer not null check (duration_minutes between 1 and 120),
@@ -211,6 +214,52 @@ create table public.event_notifications (
 create index idx_event_notifications_student_created
   on public.event_notifications(student_id, created_at desc);
 
+create table public.course_conversations (
+  id uuid primary key default gen_random_uuid(),
+  course_id uuid not null references public.courses(id) on delete cascade,
+  student_id uuid not null references public.profiles(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint course_conversations_course_student_key unique (course_id, student_id)
+);
+
+create index idx_course_conversations_student_updated
+  on public.course_conversations(student_id, updated_at desc);
+
+create table public.course_messages (
+  id uuid primary key default gen_random_uuid(),
+  conversation_id uuid not null references public.course_conversations(id) on delete cascade,
+  sender_id uuid not null references public.profiles(id) on delete cascade,
+  body text not null check (length(btrim(body)) between 1 and 4000),
+  created_at timestamptz not null default now(),
+  read_at timestamptz
+);
+
+create index idx_course_messages_conversation_created
+  on public.course_messages(conversation_id, created_at desc);
+
+create index idx_course_messages_unread
+  on public.course_messages(conversation_id, sender_id)
+  where read_at is null;
+
+create function public.touch_course_conversation_after_message()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update public.course_conversations
+  set updated_at = new.created_at
+  where id = new.conversation_id;
+  return new;
+end;
+$$;
+
+create trigger course_messages_touch_conversation
+after insert on public.course_messages
+for each row execute function public.touch_course_conversation_after_message();
+
 create function public.notify_students_about_event()
 returns trigger
 language plpgsql
@@ -280,6 +329,7 @@ create index idx_announcement_created_at on public.announcements(created_at desc
 create index idx_payments_user on public.payments(user_id);
 create unique index idx_payments_provider_ref on public.payments(provider, provider_ref);
 create index idx_cbt_questions_subject_year_status on public.cbt_questions(subject, exam_year, status);
+create index idx_cbt_questions_exam_subject_year_topic on public.cbt_questions(exam_type, subject, exam_year, topic, status);
 create index idx_cbt_questions_creator_updated on public.cbt_questions(created_by, updated_at desc);
 create index idx_manual_payment_user on public.manual_payment_submissions(user_id);
 create index idx_manual_payment_status_created on public.manual_payment_submissions(status, created_at);

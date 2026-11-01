@@ -5,6 +5,7 @@ import type { IStorage } from "./storage.js";
 import type {
   Course,
   CbtQuestion,
+  CbtExamType,
   CbtQuestionFilters,
   CbtQuestionCatalogEntry,
   CbtAttempt,
@@ -14,6 +15,8 @@ import type {
   EventFilters,
   EventRsvp,
   EventRsvpStatus,
+  CourseConversationSummary,
+  CourseMessage,
   InsertCbtAttempt,
   InsertCbtQuestion,
   InsertCourse,
@@ -117,8 +120,10 @@ function mapCbtQuestion(row: DatabaseRow): CbtQuestion {
   }
   return {
     id: row.id,
+    examType: row.exam_type ?? null,
     subject: row.subject,
     examYear: row.exam_year,
+    topic: row.topic ?? null,
     question: row.question,
     questionImageUrl: row.question_image_url,
     options: row.options,
@@ -142,6 +147,7 @@ function mapCbtAttempt(row: DatabaseRow, answers: Record<string, number> = {}): 
   }
   return {
     id: row.id,
+    examType: row.exam_type ?? null,
     userId: row.user_id,
     mode: row.mode,
     selections: row.selections,
@@ -180,6 +186,45 @@ function mapEvent(row: DatabaseRow, studentId?: string): EventRecord {
     rsvpStatus: rsvps.find((rsvp: DatabaseRow) => rsvp.student_id === studentId)?.status ?? null,
   };
 }
+
+function mapCourseConversation(row: DatabaseRow, unreadCount = 0): CourseConversationSummary {
+  const course = Array.isArray(row.course) ? row.course[0] : row.course;
+  const instructor = Array.isArray(course?.instructor) ? course.instructor[0] : course?.instructor;
+  const student = Array.isArray(row.student) ? row.student[0] : row.student;
+  if (!course || !instructor || !student) throw new Error("Course conversation is missing participant data");
+  return {
+    id: row.id,
+    courseId: row.course_id,
+    courseTitle: course.title,
+    studentId: row.student_id,
+    studentName: student.full_name,
+    instructorId: course.instructor_id,
+    instructorName: instructor.full_name,
+    createdAt: new Date(row.created_at),
+    updatedAt: new Date(row.updated_at),
+    unreadCount,
+  };
+}
+
+function mapCourseMessage(row: DatabaseRow): CourseMessage {
+  const sender = Array.isArray(row.sender) ? row.sender[0] : row.sender;
+  if (!sender) throw new Error("Course message is missing sender data");
+  return {
+    id: row.id,
+    conversationId: row.conversation_id,
+    senderId: row.sender_id,
+    senderName: sender.full_name,
+    body: row.body,
+    createdAt: new Date(row.created_at),
+    readAt: row.read_at ? new Date(row.read_at) : null,
+  };
+}
+
+const courseConversationSelect = [
+  "id, course_id, student_id, created_at, updated_at",
+  "course:courses!inner(id, title, instructor_id, instructor:profiles!courses_instructor_id_fkey(full_name))",
+  "student:profiles!course_conversations_student_id_fkey(full_name)",
+].join(", ");
 
 function mapAttempt(row: DatabaseRow): QuizAttempt {
   return {
@@ -482,8 +527,13 @@ export class SupabaseStorage implements IStorage {
 
   async getCbtQuestions(filters: CbtQuestionFilters = {}) {
     let query = this.client.from("cbt_questions").select("*").order("updated_at", { ascending: false }).limit(500);
+    if (filters.ids) query = query.in("id", filters.ids);
+    if (filters.examType) query = query.eq("exam_type", filters.examType);
     if (filters.subject) query = query.ilike("subject", filters.subject);
     if (filters.examYear !== undefined) query = query.eq("exam_year", filters.examYear);
+    if (filters.topic) query = query.eq("topic", filters.topic);
+    if (filters.topics) query = query.in("topic", filters.topics);
+    if (filters.requireTopic) query = query.not("topic", "is", null);
     if (filters.status) query = query.eq("status", filters.status);
     if (filters.createdBy) query = query.eq("created_by", filters.createdBy);
     const { data, error } = await query;
@@ -499,7 +549,9 @@ export class SupabaseStorage implements IStorage {
     if (!questions.length) return [];
     const { data, error } = await this.client.from("cbt_questions").insert(questions.map((question) => ({
       subject: question.subject,
+      exam_type: question.examType,
       exam_year: question.examYear,
+      topic: question.topic,
       question: question.question,
       question_image_url: question.questionImageUrl ?? null,
       options: question.options,
@@ -516,7 +568,7 @@ export class SupabaseStorage implements IStorage {
   async updateCbtQuestion(id: string, update: Partial<CbtQuestion>) {
     const payload: DatabaseRow = {};
     const fields: Array<[keyof CbtQuestion, string]> = [
-      ["subject", "subject"], ["examYear", "exam_year"], ["question", "question"],
+      ["examType", "exam_type"], ["subject", "subject"], ["examYear", "exam_year"], ["topic", "topic"], ["question", "question"],
       ["questionImageUrl", "question_image_url"], ["options", "options"],
       ["correctAnswer", "correct_answer"], ["explanation", "explanation"],
       ["explanationImageUrl", "explanation_image_url"], ["status", "status"],
@@ -534,13 +586,40 @@ export class SupabaseStorage implements IStorage {
     return data ? mapCbtQuestion(required(data, error)!) : undefined;
   }
 
+  async bulkClassifyCbtQuestions(
+    ids: string[],
+    examType: CbtExamType,
+    topic: string,
+    updatedBy: string,
+    createdBy?: string,
+  ) {
+    let query = this.client
+      .from("cbt_questions")
+      .update({
+        exam_type: examType,
+        topic,
+        status: "draft",
+        published_by: null,
+        published_at: null,
+        updated_by: updatedBy,
+        updated_at: new Date().toISOString(),
+      })
+      .in("id", ids);
+    if (createdBy) query = query.eq("created_by", createdBy);
+    const { data, error } = await query.select("id");
+    if (error) throw new Error(error.message);
+    return data?.length ?? 0;
+  }
+
   async getCbtQuestionCatalog(): Promise<CbtQuestionCatalogEntry[]> {
     const grouped = new Map<string, CbtQuestionCatalogEntry>();
     const pageSize = 1000;
     for (let offset = 0; ; offset += pageSize) {
       const { data, error } = await this.client
         .from("cbt_questions")
-        .select("subject, exam_year")
+        .select("exam_type, subject, exam_year, topic")
+        .not("exam_type", "is", null)
+        .not("topic", "is", null)
         .eq("status", "published")
         .order("subject")
         .order("exam_year")
@@ -548,21 +627,32 @@ export class SupabaseStorage implements IStorage {
         .range(offset, offset + pageSize - 1);
       const rows = required(data, error) ?? [];
       for (const row of rows) {
-        const key = `${String(row.subject).toLowerCase()}\u0000${row.exam_year}`;
+        if (row.exam_type !== "jamb" && row.exam_type !== "waec") continue;
+        const key = `${row.exam_type}\u0000${String(row.subject).toLowerCase()}\u0000${row.exam_year}\u0000${String(row.topic)}`;
         const existing = grouped.get(key);
         if (existing) existing.count += 1;
-        else grouped.set(key, { subject: row.subject, examYear: row.exam_year, count: 1 });
+        else grouped.set(key, {
+          examType: row.exam_type,
+          subject: row.subject,
+          examYear: row.exam_year,
+          topic: row.topic,
+          count: 1,
+        });
       }
       if (rows.length < pageSize) break;
     }
     return Array.from(grouped.values()).sort((a, b) =>
-      a.subject.localeCompare(b.subject) || b.examYear - a.examYear,
+      a.examType.localeCompare(b.examType)
+      || a.subject.localeCompare(b.subject)
+      || b.examYear - a.examYear
+      || a.topic.localeCompare(b.topic),
     );
   }
 
   async createCbtAttempt(attempt: InsertCbtAttempt): Promise<CbtAttempt> {
     const { data, error } = await this.client.from("cbt_attempts").insert({
       user_id: attempt.userId,
+      exam_type: attempt.examType,
       mode: attempt.mode,
       selections: attempt.selections,
       duration_minutes: attempt.durationMinutes,
@@ -802,6 +892,103 @@ export class SupabaseStorage implements IStorage {
       .maybeSingle();
     if (error) throw new Error(error.message);
     return !!data;
+  }
+
+  async getOrCreateCourseConversation(course: Course, studentId: string): Promise<CourseConversationSummary> {
+    const { data: inserted, error } = await this.client
+      .from("course_conversations")
+      .upsert({ course_id: course.id, student_id: studentId }, { onConflict: "course_id,student_id", ignoreDuplicates: true })
+      .select("id")
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    let conversationId = inserted?.id;
+    if (!conversationId) {
+      const { data, error: lookupError } = await this.client
+        .from("course_conversations")
+        .select("id")
+        .eq("course_id", course.id)
+        .eq("student_id", studentId)
+        .single();
+      if (lookupError) throw new Error(lookupError.message);
+      if (!data || !("id" in data) || typeof data.id !== "string") {
+        throw new Error("Course conversation could not be found");
+      }
+      conversationId = data.id;
+    }
+    const summary = await this.getCourseConversation(conversationId, studentId);
+    if (!summary) throw new Error("Course conversation could not be loaded");
+    return summary;
+  }
+
+  async getCourseConversation(id: string, userId: string): Promise<CourseConversationSummary | undefined> {
+    const { data, error } = await this.client
+      .from("course_conversations")
+      .select(courseConversationSelect)
+      .eq("id", id)
+      .maybeSingle();
+    if (!data) return undefined;
+    const row = required(data, error)!;
+    const unreadCounts = await this.getCourseUnreadCounts([id], userId);
+    return mapCourseConversation(row, unreadCounts.get(id) ?? 0);
+  }
+
+  async getCourseConversationsForUser(userId: string): Promise<CourseConversationSummary[]> {
+    const [studentResult, instructorResult] = await Promise.all([
+      this.client.from("course_conversations").select(courseConversationSelect).eq("student_id", userId).returns<DatabaseRow[]>(),
+      this.client.from("course_conversations").select(courseConversationSelect).eq("course.instructor_id", userId).returns<DatabaseRow[]>(),
+    ]);
+    const rows = new Map<string, DatabaseRow>();
+    for (const result of [studentResult, instructorResult]) {
+      for (const row of required(result.data, result.error) ?? []) rows.set(row.id, row);
+    }
+    const unreadCounts = await this.getCourseUnreadCounts(Array.from(rows.keys()), userId);
+    return Array.from(rows.values())
+      .map((row) => mapCourseConversation(row, unreadCounts.get(row.id) ?? 0))
+      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+  }
+
+  private async getCourseUnreadCounts(conversationIds: string[], userId: string): Promise<Map<string, number>> {
+    if (conversationIds.length === 0) return new Map();
+    const { data, error } = await this.client
+      .from("course_messages")
+      .select("conversation_id")
+      .in("conversation_id", conversationIds)
+      .neq("sender_id", userId)
+      .is("read_at", null);
+    const counts = new Map<string, number>();
+    for (const row of required(data, error) ?? []) {
+      counts.set(row.conversation_id, (counts.get(row.conversation_id) ?? 0) + 1);
+    }
+    return counts;
+  }
+
+  async getCourseMessages(conversationId: string, limit = 100): Promise<CourseMessage[]> {
+    const { data, error } = await this.client
+      .from("course_messages")
+      .select("id, conversation_id, sender_id, body, created_at, read_at, sender:profiles!course_messages_sender_id_fkey(full_name)")
+      .eq("conversation_id", conversationId)
+      .order("created_at", { ascending: false })
+      .limit(limit);
+    return (required(data, error) ?? []).map(mapCourseMessage).reverse();
+  }
+
+  async createCourseMessage(conversationId: string, senderId: string, body: string): Promise<CourseMessage> {
+    const { data, error } = await this.client
+      .from("course_messages")
+      .insert({ conversation_id: conversationId, sender_id: senderId, body })
+      .select("id, conversation_id, sender_id, body, created_at, read_at, sender:profiles!course_messages_sender_id_fkey(full_name)")
+      .single();
+    return mapCourseMessage(required(data, error)!);
+  }
+
+  async markCourseMessagesRead(conversationId: string, readerId: string): Promise<void> {
+    const { error } = await this.client
+      .from("course_messages")
+      .update({ read_at: new Date().toISOString() })
+      .eq("conversation_id", conversationId)
+      .neq("sender_id", readerId)
+      .is("read_at", null);
+    if (error) throw new Error(error.message);
   }
 
   async getQuizAttempts(userId: string, quizId: string) {

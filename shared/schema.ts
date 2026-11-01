@@ -172,10 +172,14 @@ export type QuizQuestion = z.infer<typeof quizQuestionSchema>;
 
 export const cbtQuestionStatusSchema = z.enum(["draft", "published", "archived"]);
 export type CbtQuestionStatus = z.infer<typeof cbtQuestionStatusSchema>;
+export const cbtExamTypeSchema = z.enum(["jamb", "waec"]);
+export type CbtExamType = z.infer<typeof cbtExamTypeSchema>;
 
 export const cbtQuestionInputSchema = z.object({
+  examType: cbtExamTypeSchema,
   subject: z.string().trim().min(1).max(80),
   examYear: z.number().int().min(1950).max(2100),
+  topic: z.string().trim().min(1).max(120),
   question: z.string().trim().min(1).max(10000),
   questionImageUrl: quizQuestionImageUrlSchema.optional(),
   options: z.array(z.string().trim().min(1).max(2000)).length(4),
@@ -186,8 +190,10 @@ export const cbtQuestionInputSchema = z.object({
 
 export type CbtQuestionInput = z.infer<typeof cbtQuestionInputSchema>;
 
-export type CbtQuestion = Omit<CbtQuestionInput, "questionImageUrl" | "explanation" | "explanationImageUrl"> & {
+export type CbtQuestion = Omit<CbtQuestionInput, "examType" | "topic" | "questionImageUrl" | "explanation" | "explanationImageUrl"> & {
   id: string;
+  examType: CbtExamType | null;
+  topic: string | null;
   questionImageUrl: string | null;
   explanation: string | null;
   explanationImageUrl: string | null;
@@ -204,15 +210,22 @@ export type CbtQuestion = Omit<CbtQuestionInput, "questionImageUrl" | "explanati
 export type InsertCbtQuestion = CbtQuestionInput & { createdBy: string };
 
 export interface CbtQuestionFilters {
+  ids?: string[];
+  examType?: CbtExamType;
   subject?: string;
   examYear?: number;
+  topic?: string;
+  topics?: string[];
+  requireTopic?: boolean;
   status?: CbtQuestionStatus;
   createdBy?: string;
 }
 
 export interface CbtQuestionCatalogEntry {
+  examType: CbtExamType;
   subject: string;
   examYear: number;
+  topic: string;
   count: number;
 }
 
@@ -221,7 +234,8 @@ export type CbtAttemptStatus = "in_progress" | "submitted" | "expired";
 
 export interface CbtAttemptSelection {
   subject: string;
-  examYear: number;
+  examYear?: number;
+  topics?: string[];
   questionCount: number;
 }
 
@@ -229,6 +243,7 @@ export interface CbtAttemptQuestion {
   id: string;
   subject: string;
   examYear: number;
+  topic?: string | null;
   question: string;
   questionImageUrl: string | null;
   options: string[];
@@ -239,6 +254,7 @@ export interface CbtAttemptQuestion {
 
 export interface CbtAttempt {
   id: string;
+  examType: CbtExamType | null;
   userId: string;
   mode: CbtAttemptMode;
   selections: CbtAttemptSelection[];
@@ -257,8 +273,10 @@ export type InsertCbtAttempt = Omit<CbtAttempt, "id" | "answers" | "score" | "su
 
 export const cbtQuestions = pgTable("cbt_questions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  examType: text("exam_type"),
   subject: text("subject").notNull(),
   examYear: integer("exam_year").notNull(),
+  topic: text("topic"),
   question: text("question").notNull(),
   questionImageUrl: text("question_image_url"),
   options: jsonb("options").$type<string[]>().notNull(),
@@ -278,6 +296,7 @@ export const cbtQuestions = pgTable("cbt_questions", {
 export const cbtAttempts = pgTable("cbt_attempts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull(),
+  examType: text("exam_type"),
   mode: text("mode").notNull(),
   selections: jsonb("selections").$type<CbtAttemptSelection[]>().notNull(),
   durationMinutes: integer("duration_minutes").notNull(),
@@ -314,8 +333,48 @@ export const events = pgTable("events", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const courseConversations = pgTable("course_conversations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  courseId: varchar("course_id").notNull(),
+  studentId: varchar("student_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const courseMessages = pgTable("course_messages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  conversationId: varchar("conversation_id").notNull(),
+  senderId: varchar("sender_id").notNull(),
+  body: text("body").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  readAt: timestamp("read_at", { withTimezone: true }),
+});
+
 export type EventStatus = "draft" | "published" | "cancelled";
 export type EventRsvpStatus = "attending" | "not_attending";
+
+export interface CourseConversationSummary {
+  id: string;
+  courseId: string;
+  courseTitle: string;
+  studentId: string;
+  studentName: string;
+  instructorId: string;
+  instructorName: string;
+  createdAt: Date;
+  updatedAt: Date;
+  unreadCount: number;
+}
+
+export interface CourseMessage {
+  id: string;
+  conversationId: string;
+  senderId: string;
+  senderName: string;
+  body: string;
+  createdAt: Date;
+  readAt: Date | null;
+}
 
 export interface EventRecord {
   id: string;

@@ -1,12 +1,22 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import type { CbtAttempt, CbtQuestion } from "../shared/schema.js";
-import { sampleCbtQuestions, scoreCbtAttempt, shuffleCbtQuestions, toCbtStudentAttempt } from "./cbt-utils.js";
+import {
+  cbtAttemptRequestSchema,
+  sampleCbtQuestions,
+  sampleCbtQuestionsAcrossTopics,
+  scoreCbtAttempt,
+  shuffleCbtQuestions,
+  standardMockQuestionCount,
+  toCbtStudentAttempt,
+} from "./cbt-utils.js";
 
 const question = (id: string, correctAnswer: number): CbtQuestion => ({
   id,
+  examType: "jamb",
   subject: "Mathematics",
   examYear: 2025,
+  topic: id.startsWith("algebra") ? "Algebra" : "Geometry",
   question: `Question ${id}`,
   questionImageUrl: null,
   options: ["A", "B", "C", "D"],
@@ -38,6 +48,78 @@ describe("CBT attempt utilities", () => {
     assert.ok(sample.every((item) => bank.some((candidate) => candidate.id === item.id)));
   });
 
+  it("includes questions from every topic when the requested count allows it", () => {
+    const bank = [
+      question("algebra-1", 1),
+      question("algebra-2", 2),
+      question("algebra-3", 3),
+      question("geometry-1", 1),
+      question("geometry-2", 2),
+    ];
+    const sample = sampleCbtQuestionsAcrossTopics(bank, 4);
+    assert.equal(sample.length, 4);
+    assert.equal(new Set(sample.map((item) => item.id)).size, 4);
+    assert.deepEqual(new Set(sample.map((item) => item.topic)), new Set(["Algebra", "Geometry"]));
+    assert.ok(sample.every((item) => bank.some((candidate) => candidate.id === item.id)));
+  });
+
+  it("uses the established English and other-subject mock question counts", () => {
+    assert.equal(standardMockQuestionCount("English Language"), 60);
+    assert.equal(standardMockQuestionCount("Mathematics"), 40);
+  });
+
+  it("requires English and three other subjects for a mock and omits year/topic filters", () => {
+    const selections = [
+      { subject: "English Language", questionCount: 60 },
+      { subject: "Mathematics", questionCount: 40 },
+      { subject: "Biology", questionCount: 40 },
+      { subject: "Chemistry", questionCount: 40 },
+    ];
+    assert.equal(cbtAttemptRequestSchema.safeParse({
+      examType: "jamb",
+      mode: "mock",
+      durationMinutes: 120,
+      selections,
+    }).success, true);
+    assert.equal(cbtAttemptRequestSchema.safeParse({
+      examType: "jamb",
+      mode: "mock",
+      durationMinutes: 120,
+      selections: selections.slice(1),
+    }).success, false);
+    assert.equal(cbtAttemptRequestSchema.safeParse({
+      examType: "jamb",
+      mode: "mock",
+      durationMinutes: 120,
+      selections: selections.map((selection, index) => index === 1 ? { ...selection, examYear: 2025 } : selection),
+    }).success, false);
+  });
+
+  it("requires a year for every self-test subject and rejects duplicate subjects", () => {
+    const selection = { subject: "Mathematics", questionCount: 10 };
+    assert.equal(cbtAttemptRequestSchema.safeParse({
+      examType: "waec",
+      mode: "self",
+      durationMinutes: 30,
+      selections: [{ ...selection, examYear: 2024, topics: ["Algebra"] }],
+    }).success, true);
+    assert.equal(cbtAttemptRequestSchema.safeParse({
+      examType: "waec",
+      mode: "self",
+      durationMinutes: 30,
+      selections: [selection],
+    }).success, false);
+    assert.equal(cbtAttemptRequestSchema.safeParse({
+      examType: "waec",
+      mode: "self",
+      durationMinutes: 30,
+      selections: [
+        { ...selection, examYear: 2024 },
+        { ...selection, subject: "mathematics", examYear: 2025 },
+      ],
+    }).success, false);
+  });
+
   it("scores one point for each correct answer with no penalty for wrong or blank answers", () => {
     const questions = shuffleCbtQuestions([question("q1", 1), question("q2", 4), question("q3", 2)]);
     const first = questions.find((item) => item.id === "q1")!;
@@ -52,6 +134,7 @@ describe("CBT attempt utilities", () => {
     const questions = shuffleCbtQuestions([question("q1", 2)]);
     const attempt: CbtAttempt = {
       id: "attempt",
+      examType: "jamb",
       userId: "student",
       mode: "self",
       selections: [{ subject: "Mathematics", examYear: 2025, questionCount: 1 }],

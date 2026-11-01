@@ -15,8 +15,9 @@ import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
 import { QuizMarkdownEditor } from "@/components/quiz/quiz-markdown";
+import { LessonSpeechControls } from "@/components/course/lesson-speech-controls";
 import type { AnnouncementRecord } from "@/lib/announcements";
-import type { Course, EventRecord, Module, QuizQuestion, User } from "@shared/schema";
+import type { CbtExamType, Course, EventRecord, Module, QuizQuestion, User } from "@shared/schema";
 import { Archive, BarChart3, BookOpen, CalendarDays, ClipboardList, CreditCard, Download, FileQuestion, FileUp, LayoutDashboard, Pencil, Plus, RotateCcw, Send, Settings2, Trash2, UserRound, Users, X } from "lucide-react";
 import { isInitialEmptyQuizQuestion, parseQuizCsv, type QuizCsvPreview } from "@/lib/quiz-csv";
 import { formatDateTimeForZone, localDateTimeToUtc } from "@shared/event-utils";
@@ -85,8 +86,10 @@ interface ManualPaymentSubmission {
 
 interface CbtQuestionRecord {
   id: string;
+  examType: CbtExamType | null;
   subject: string;
   examYear: number;
+  topic: string | null;
   question: string;
   questionImageUrl: string | null;
   options: string[];
@@ -103,8 +106,10 @@ interface CbtQuestionRecord {
 }
 
 interface CbtQuestionDraft {
+  examType: CbtExamType | "";
   subject: string;
   examYear: string;
+  topic: string;
   question: string;
   questionImageUrl: string;
   options: string[];
@@ -971,6 +976,10 @@ function ModulePanel({ courses, selectedCourseId, chooseCourse, modules, draft, 
           <Field label="Content">
             <QuizMarkdownEditor value={draft.content} onChange={(content) => setDraft({ ...draft, content })} placeholder="Write the lesson. Paste lists or LaTeX equations here." minHeight="min-h-56" enableImageInsert />
           </Field>
+          <div className="-mt-2 space-y-2">
+            <p className="text-sm text-muted-foreground">Preview the English narration using voices available in your browser. The student audio player reads the saved lesson text.</p>
+            <LessonSpeechControls source={draft.content} />
+          </div>
 
           <Field label="Additional module image URL (optional)">
             <Input
@@ -1144,8 +1153,10 @@ function ModulePanel({ courses, selectedCourseId, chooseCourse, modules, draft, 
 
 function createEmptyCbtQuestionDraft(): CbtQuestionDraft {
   return {
+    examType: "",
     subject: "",
     examYear: String(new Date().getFullYear()),
+    topic: "",
     question: "",
     questionImageUrl: "",
     options: ["", "", "", ""],
@@ -1163,6 +1174,10 @@ function CbtQuestionBankPanel({ userId, canManageAll }: { userId: string; canMan
   const [subjectFilter, setSubjectFilter] = useState("all");
   const [yearFilter, setYearFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "draft" | "published" | "archived">("all");
+  const [examTypeFilter, setExamTypeFilter] = useState<"all" | CbtExamType | "uncategorized">("all");
+  const [selectedQuestionIds, setSelectedQuestionIds] = useState<string[]>([]);
+  const [bulkExamType, setBulkExamType] = useState<CbtExamType | "">("");
+  const [bulkTopic, setBulkTopic] = useState("");
   const [csvPreview, setCsvPreview] = useState<QuizCsvPreview | null>(null);
   const [csvFileName, setCsvFileName] = useState("");
 
@@ -1175,6 +1190,8 @@ function CbtQuestionBankPanel({ userId, canManageAll }: { userId: string; canMan
   const subjects = Array.from(new Set(questions.map((question) => question.subject))).sort((a, b) => a.localeCompare(b));
   const years = Array.from(new Set(questions.map((question) => question.examYear))).sort((a, b) => b - a);
   const filteredQuestions = questions.filter((question) =>
+    (examTypeFilter === "all" || (examTypeFilter === "uncategorized" ? !question.examType || !question.topic : question.examType === examTypeFilter))
+    &&
     (subjectFilter === "all" || question.subject === subjectFilter)
     && (yearFilter === "all" || question.examYear === Number(yearFilter))
     && (statusFilter === "all" || question.status === statusFilter),
@@ -1187,9 +1204,12 @@ function CbtQuestionBankPanel({ userId, canManageAll }: { userId: string; canMan
 
   const saveQuestion = useMutation({
     mutationFn: () => {
+      if (!draft.examType) throw new Error("Choose an exam category.");
       const payload = {
+        examType: draft.examType,
         subject: draft.subject,
         examYear: Number(draft.examYear),
+        topic: draft.topic,
         question: draft.question,
         questionImageUrl: draft.questionImageUrl.trim() || undefined,
         options: draft.options,
@@ -1221,12 +1241,14 @@ function CbtQuestionBankPanel({ userId, canManageAll }: { userId: string; canMan
       if (!csvPreview || csvPreview.issues.length || !csvPreview.questions.length) {
         throw new Error("Resolve all CSV issues before importing.");
       }
-      if (!draft.subject.trim() || !draft.examYear) {
-        throw new Error("Enter a subject and exam year in the question form before importing.");
+      if (!draft.examType || !draft.subject.trim() || !draft.examYear || !draft.topic.trim()) {
+        throw new Error("Choose an exam category, subject, year, and topic in the question form before importing.");
       }
       return apiRequest("POST", "/api/admin/cbt/questions/import", {
+        examType: draft.examType,
         subject: draft.subject,
         examYear: Number(draft.examYear),
+        topic: draft.topic,
         questions: csvPreview.questions.map((question) => ({
           question: question.question,
           questionImageUrl: question.questionImageUrl || undefined,
@@ -1255,6 +1277,26 @@ function CbtQuestionBankPanel({ userId, canManageAll }: { userId: string; canMan
       toast({ title: titles[variables.action] });
     },
     onError: (error: Error) => toast({ title: "Could not update question status", description: error.message, variant: "destructive" }),
+  });
+
+  const bulkClassify = useMutation({
+    mutationFn: () => {
+      if (!selectedQuestionIds.length) throw new Error("Select at least one question.");
+      if (!bulkExamType) throw new Error("Choose an exam category.");
+      if (!bulkTopic.trim()) throw new Error("Enter the topic for the selected questions.");
+      return apiRequest("POST", "/api/admin/cbt/questions/bulk-classify", {
+        ids: selectedQuestionIds,
+        examType: bulkExamType,
+        topic: bulkTopic.trim(),
+      });
+    },
+    onSuccess: (result: { updated: number }) => {
+      setSelectedQuestionIds([]);
+      setBulkTopic("");
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/cbt/questions", userId] });
+      toast({ title: "Questions reclassified", description: `${result.updated} question${result.updated === 1 ? "" : "s"} updated.` });
+    },
+    onError: (error: Error) => toast({ title: "Could not reclassify questions", description: error.message, variant: "destructive" }),
   });
 
   const handleCsvFile = async (file?: File) => {
@@ -1291,8 +1333,10 @@ function CbtQuestionBankPanel({ userId, canManageAll }: { userId: string; canMan
   const editQuestion = (question: CbtQuestionRecord) => {
     setEditingQuestionId(question.id);
     setDraft({
+      examType: question.examType ?? "",
       subject: question.subject,
       examYear: String(question.examYear),
+      topic: question.topic ?? "",
       question: question.question,
       questionImageUrl: question.questionImageUrl || "",
       options: question.options,
@@ -1309,7 +1353,7 @@ function CbtQuestionBankPanel({ userId, canManageAll }: { userId: string; canMan
         <CardHeader>
           <CardTitle>{editingQuestionId ? "Edit CBT question" : "Add a CBT question"}</CardTitle>
           <CardDescription>
-            Questions are organized by subject and exam year, independently from course quizzes. New and imported questions are saved as drafts and are not available to students until published.
+            Organize each question by exam category, subject, year, and topic. New and imported questions are saved as drafts and are not available to students until published.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -1321,11 +1365,26 @@ function CbtQuestionBankPanel({ userId, canManageAll }: { userId: string; canMan
             }}
           >
             <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Exam category">
+                <select
+                  className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                  value={draft.examType}
+                  onChange={(event) => setDraft({ ...draft, examType: event.target.value as CbtQuestionDraft["examType"] })}
+                  required
+                >
+                  <option value="">Choose exam category</option>
+                  <option value="jamb">JAMB/UTME</option>
+                  <option value="waec">WAEC/NECO</option>
+                </select>
+              </Field>
               <Field label="Subject">
                 <Input value={draft.subject} onChange={(event) => setDraft({ ...draft, subject: event.target.value })} placeholder="e.g. Mathematics" maxLength={80} required />
               </Field>
               <Field label="Exam year">
                 <Input type="number" min="1950" max="2100" value={draft.examYear} onChange={(event) => setDraft({ ...draft, examYear: event.target.value })} required />
+              </Field>
+              <Field label="Topic">
+                <Input value={draft.topic} onChange={(event) => setDraft({ ...draft, topic: event.target.value })} placeholder="e.g. Algebra" maxLength={120} required />
               </Field>
             </div>
             <Field label="Question">
@@ -1379,7 +1438,7 @@ function CbtQuestionBankPanel({ userId, canManageAll }: { userId: string; canMan
       <Card>
         <CardHeader>
           <CardTitle>Import questions from CSV</CardTitle>
-          <CardDescription>Choose the subject and year above first. Every imported row is validated and saved as a draft; no question is published automatically.</CardDescription>
+          <CardDescription>Choose the exam category, subject, year, and topic above first. Every imported row is validated and saved as a draft; no question is published automatically.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
@@ -1432,7 +1491,13 @@ function CbtQuestionBankPanel({ userId, canManageAll }: { userId: string; canMan
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-4">
+            <select className="h-10 rounded-md border bg-background px-3 text-sm" aria-label="Filter by exam category" value={examTypeFilter} onChange={(event) => setExamTypeFilter(event.target.value as typeof examTypeFilter)}>
+              <option value="all">All exam categories</option>
+              <option value="uncategorized">Needs classification</option>
+              <option value="jamb">JAMB/UTME</option>
+              <option value="waec">WAEC/NECO</option>
+            </select>
             <select className="h-10 rounded-md border bg-background px-3 text-sm" aria-label="Filter by subject" value={subjectFilter} onChange={(event) => setSubjectFilter(event.target.value)}>
               <option value="all">All subjects</option>
               {subjects.map((subject) => <option key={subject} value={subject}>{subject}</option>)}
@@ -1453,14 +1518,60 @@ function CbtQuestionBankPanel({ userId, canManageAll }: { userId: string; canMan
           {!questionsQuery.isPending && !questionsQuery.isError && filteredQuestions.length === 0 && (
             <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">No questions match these filters yet.</p>
           )}
+          {filteredQuestions.length > 0 && (
+            <div className="space-y-3 rounded-lg border bg-muted/20 p-4">
+              <label className="flex items-center gap-2 text-sm font-medium">
+                <input
+                  type="checkbox"
+                  checked={filteredQuestions.every((question) => selectedQuestionIds.includes(question.id))}
+                  onChange={(event) => setSelectedQuestionIds((current) => event.target.checked
+                    ? Array.from(new Set([...current, ...filteredQuestions.map((question) => question.id)]))
+                    : current.filter((id) => !filteredQuestions.some((question) => question.id === id)))}
+                />
+                Select all {filteredQuestions.length} visible questions
+              </label>
+              <p className="text-sm text-muted-foreground">Bulk assign a category and topic to existing questions, including uncategorized questions.</p>
+              <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
+                <select
+                  className="h-10 rounded-md border bg-background px-3 text-sm"
+                  value={bulkExamType}
+                  onChange={(event) => setBulkExamType(event.target.value as CbtExamType | "")}
+                  aria-label="Bulk exam category"
+                >
+                  <option value="">Choose exam category</option>
+                  <option value="jamb">JAMB/UTME</option>
+                  <option value="waec">WAEC/NECO</option>
+                </select>
+                <Input value={bulkTopic} onChange={(event) => setBulkTopic(event.target.value)} placeholder="Topic for selected questions" maxLength={120} />
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={!selectedQuestionIds.length || bulkClassify.isPending}
+                  onClick={() => bulkClassify.mutate()}
+                >
+                  {bulkClassify.isPending ? "Updating..." : `Classify ${selectedQuestionIds.length}`}
+                </Button>
+              </div>
+            </div>
+          )}
           <div className="space-y-3">
             {filteredQuestions.map((question) => (
               <article key={question.id} className="rounded-xl border p-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="mb-2 flex flex-wrap items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={selectedQuestionIds.includes(question.id)}
+                        onChange={(event) => setSelectedQuestionIds((current) => event.target.checked
+                          ? [...current, question.id]
+                          : current.filter((id) => id !== question.id))}
+                        aria-label={`Select question for ${question.subject}, ${question.examYear}`}
+                      />
                       <Badge variant={question.status === "published" ? "default" : question.status === "archived" ? "destructive" : "secondary"}>{question.status}</Badge>
+                      <Badge variant="outline">{question.examType === "jamb" ? "JAMB/UTME" : question.examType === "waec" ? "WAEC/NECO" : "Uncategorized"}</Badge>
                       <span className="text-xs font-medium text-muted-foreground">{question.subject} · {question.examYear}</span>
+                      {question.topic && <span className="text-xs text-muted-foreground">· {question.topic}</span>}
                     </div>
                     <p className="whitespace-pre-wrap font-medium">{question.question}</p>
                   </div>

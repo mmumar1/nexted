@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bell, BookOpen, CalendarClock, CalendarDays, ClipboardList, FolderKanban, LayoutDashboard, LogOut, Medal, Menu, MessageCircle, Moon, Sun } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Sheet, SheetClose, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
@@ -11,6 +12,7 @@ import { WhatsAppFloat } from "@/components/whatsapp-float";
 import { useAuth } from "@/lib/auth-context";
 import type { AnnouncementRecord } from "@/lib/announcements";
 import { apiRequest } from "@/lib/queryClient";
+import type { CourseConversationSummary } from "@shared/schema";
 
 interface LeaderboardTier {
   id: "gold" | "silver" | "bronze";
@@ -74,6 +76,13 @@ export function Navbar() {
     queryFn: () => apiRequest("GET", `/api/dashboard/${user?.id}/leaderboard`),
     enabled: !!user?.id,
   });
+  const { data: conversations = [] } = useQuery<CourseConversationSummary[]>({
+    queryKey: ["/api/messages", user?.id],
+    queryFn: () => apiRequest("GET", "/api/messages"),
+    enabled: !!user?.id && ["student", "instructor", "admin", "super_admin", "superadmin"].includes(user.role),
+    refetchInterval: 15_000,
+  });
+  const unreadMessageCount = conversations.reduce((count, conversation) => count + conversation.unreadCount, 0);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", isDarkMode);
@@ -129,23 +138,17 @@ export function Navbar() {
           </div>
 
           <div className="flex shrink-0 items-center gap-0 sm:gap-1">
-            {(user?.role === "student" || user?.role === "instructor") && (
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="ghost" size="icon" className="max-[380px]:h-9 max-[380px]:w-9" aria-label="Messages">
-                    <MessageCircle className="h-5 w-5" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent align="end" className="w-[min(22rem,calc(100vw-2rem))]">
-                  <div className="flex items-center gap-2">
-                    <MessageCircle className="h-4 w-4 text-primary" />
-                    <h2 className="font-semibold">Messages</h2>
-                  </div>
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    Course messaging is coming soon. You’ll be able to contact instructors and manage course conversations here.
-                  </p>
-                </PopoverContent>
-              </Popover>
+            {user && ["student", "instructor", "admin", "super_admin", "superadmin"].includes(user.role) && (
+              <Link href="/messages">
+                <Button variant="ghost" size="icon" className="relative max-[380px]:h-9 max-[380px]:w-9" aria-label="Messages (Beta)" title="Messages · Beta">
+                  <MessageCircle className="h-5 w-5" />
+                  {unreadMessageCount > 0 && (
+                    <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-destructive-foreground">
+                      {unreadMessageCount > 9 ? "9+" : unreadMessageCount}
+                    </span>
+                  )}
+                </Button>
+              </Link>
             )}
 
             <Popover>
@@ -318,12 +321,24 @@ export function Navbar() {
                   </SheetClose>
                   <SheetClose asChild>
                     <Link
+                      href="/messages"
+                      className={`flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground ${location.startsWith("/messages") ? "bg-accent text-accent-foreground" : ""}`}
+                      data-testid="link-messages"
+                    >
+                      <MessageCircle className="h-4 w-4" />
+                      Messages
+                      <Badge variant="secondary" className="ml-auto">Beta</Badge>
+                    </Link>
+                  </SheetClose>
+                  <SheetClose asChild>
+                    <Link
                       href="/cbt"
                       className={`flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground ${location.startsWith("/cbt") ? "bg-accent text-accent-foreground" : ""}`}
                       data-testid="link-cbt"
                     >
                       <ClipboardList className="h-4 w-4" />
                       CBT practice
+                      <Badge variant="secondary" className="ml-auto">Beta</Badge>
                     </Link>
                   </SheetClose>
                 </div>

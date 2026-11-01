@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { normalizeYouTubeEmbedUrl } from "@/lib/video";
 import { getModuleDisplayLabel } from "@/lib/module-utils";
 import { QuizMarkdownContent } from "@/components/quiz/quiz-markdown";
+import { LessonSpeechControls } from "@/components/course/lesson-speech-controls";
 import type { Module } from "@shared/schema";
 
 interface ModuleContentProps {
@@ -52,6 +53,7 @@ export function ModuleContent({
       </div>
 
       <div className="px-5 py-6 sm:px-7">
+        <LessonSpeechControls source={module.content} />
         <QuizMarkdownContent source={module.content} enableImageLightbox />
 
         {module.imageUrl && (

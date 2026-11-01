@@ -106,6 +106,8 @@ alter table public.announcements enable row level security;
 alter table public.events enable row level security;
 alter table public.event_rsvps enable row level security;
 alter table public.event_notifications enable row level security;
+alter table public.course_conversations enable row level security;
+alter table public.course_messages enable row level security;
 alter table public.payments enable row level security;
 
 -- Profiles
@@ -125,6 +127,118 @@ using (
 )
 with check (
   public.current_user_role() in ('admin', 'super_admin')
+);
+
+-- Course messaging
+create policy "Participants can view course conversations"
+on public.course_conversations for select
+using (
+  (
+    student_id = auth.uid()
+    and public.current_user_role() = 'student'
+    and exists (
+      select 1 from public.courses c
+      where c.id = course_id and c.is_published
+    )
+  )
+  or exists (
+    select 1 from public.courses c
+    where c.id = course_id
+      and c.instructor_id = auth.uid()
+      and public.current_user_role() in ('instructor', 'admin', 'super_admin')
+  )
+);
+
+create policy "Students can start their own course conversations"
+on public.course_conversations for insert
+with check (
+  student_id = auth.uid()
+  and public.current_user_role() = 'student'
+  and exists (
+    select 1 from public.courses c
+    where c.id = course_id and c.is_published and c.instructor_id is not null
+  )
+);
+
+create policy "Participants can view course messages"
+on public.course_messages for select
+using (
+  exists (
+    select 1
+    from public.course_conversations cc
+    join public.courses c on c.id = cc.course_id
+    where cc.id = conversation_id
+      and c.is_published
+      and (
+        (cc.student_id = auth.uid() and public.current_user_role() = 'student')
+        or (
+          c.instructor_id = auth.uid()
+          and public.current_user_role() in ('instructor', 'admin', 'super_admin')
+        )
+      )
+  )
+);
+
+create policy "Participants can send course messages"
+on public.course_messages for insert
+with check (
+  sender_id = auth.uid()
+  and exists (
+    select 1
+    from public.course_conversations cc
+    join public.courses c on c.id = cc.course_id
+    where cc.id = conversation_id
+      and c.is_published
+      and (
+        (cc.student_id = auth.uid() and public.current_user_role() = 'student')
+        or (
+          c.instructor_id = auth.uid()
+          and public.current_user_role() in ('instructor', 'admin', 'super_admin')
+        )
+      )
+  )
+);
+
+revoke update on public.course_messages from authenticated;
+grant update(read_at) on public.course_messages to authenticated;
+
+create policy "Recipients can mark course messages read"
+on public.course_messages for update
+using (
+  sender_id <> auth.uid()
+  and read_at is null
+  and exists (
+    select 1
+    from public.course_conversations cc
+    join public.courses c on c.id = cc.course_id
+    where cc.id = conversation_id
+      and c.is_published
+      and (
+        (cc.student_id = auth.uid() and public.current_user_role() = 'student')
+        or (
+          c.instructor_id = auth.uid()
+          and public.current_user_role() in ('instructor', 'admin', 'super_admin')
+        )
+      )
+  )
+)
+with check (
+  sender_id <> auth.uid()
+  and read_at is not null
+  and exists (
+    select 1
+    from public.course_conversations cc
+    join public.courses c on c.id = cc.course_id
+    where cc.id = conversation_id
+      and c.is_published
+      and (
+        (cc.student_id = auth.uid() and public.current_user_role() = 'student')
+        or (
+          c.instructor_id = auth.uid()
+          and public.current_user_role() in ('instructor', 'admin', 'super_admin')
+        )
+      )
+  )
 );
 
 -- Courses

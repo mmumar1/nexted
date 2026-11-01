@@ -5,7 +5,8 @@ This document records the Events and JAMB-style CBT features and their implement
 ## Current implementation status
 
 - **CBT authoring (complete):** Staff can create questions manually or import a CSV (up to 200 questions per import), filter and edit their question bank, publish drafts, and archive or restore questions. Instructors manage their own questions; admins can manage all questions. Editing a published question returns it to draft for review.
-- **Student CBT flow (implemented):** Students can select published questions by subject and year, create self-tests or standard mocks, resume one active attempt, navigate and answer with automatic server persistence, submit or time out, and review scores, answers, explanations, and pace. Question snapshots, timing, scoring, ownership, and answer-key reveal are enforced server-side. Attempt creation is limited to 10 per minute per student.
+- **Student CBT flow (implemented):** Students choose a JAMB/UTME or WAEC/NECO card, then choose up to four subjects. Self-tests support year, all or selected topics, question count per subject, and duration; question sampling is random and balanced across matching topics. Mocks preselect English and require three other subjects, use 60 English plus 40 per other subject, and last 120 minutes without year/topic selection. Students can resume one active attempt, navigate and answer with automatic server persistence, submit or time out, and review scores, answers, explanations, and pace.
+- **Existing CBT questions:** The `supabase/cbt-exam-topics-migration.sql` migration adds exam-category and topic fields. Existing records remain uncategorized and are excluded from student tests until staff bulk-classify them; reclassifying a published question returns it to draft for review.
 - **Events (implemented):** Staff can create drafts, publish, edit, cancel, and delete draft events. Students can see published and cancelled events, RSVP, download ICS calendar files, and open Google Calendar templates. Publishing, updating, and cancelling generate per-student in-app notifications.
 
 ## Navigation delivered now
@@ -48,10 +49,10 @@ CBT means a separate computer-based test system for JAMB-standard mock preparati
 
 ### Student experience
 
-- Let students choose the available subject(s) and exam year before starting a practice test.
-- Generate a paper from the selected subject/year question bank.
-- For self-tests, let the student choose 1–200 questions per selected subject/year, subject to the published question count, and choose a duration of 15, 30, 45, 60, 90, or 120 minutes.
-- For mock tests, require 60 English questions and 40 per other selected subject, with a 120-minute duration.
+- Show separate JAMB/UTME and WAEC/NECO entry cards before presenting test setup.
+- Let students select up to four unique subjects. For self-tests, allow choosing a year, all topics or selected topics, a question count per subject (1–200), and a duration of 15, 30, 45, 60, 90, or 120 minutes.
+- When all topics are selected, draw random questions across the subject's available topics rather than concentrating on one topic.
+- For mocks, preselect English and require three other subjects. Use 60 English questions and 40 per other selected subject, with a fixed 120-minute duration and no year/topic selector.
 - Shuffle question and option order for each attempt while preserving the answer key.
 - Provide a timed test with a visible countdown and a clear submission/expiry state. The server deadline is authoritative.
 - Let students jump directly between questions, move forward/back, and see which questions are answered or unanswered.
@@ -63,14 +64,15 @@ CBT means a separate computer-based test system for JAMB-standard mock preparati
 ### Teacher/admin authoring
 
 - Provide a teacher-facing CBT authoring area separate from course quizzes.
-- Let authorized staff create and manage CBT questions, assign subject and year, set the correct answer, and provide optional explanation/media.
+- Let authorized staff create and manage CBT questions, assign exam category, subject, year, and topic, set the correct answer, and provide optional explanation/media.
+- Let staff bulk-classify existing questions. Changing the category/topic of published questions must return them to draft for review.
 - Support drafts, review/publish status, editing, and archival so unreviewed questions are not served in live practice.
 - Validate that each published question has the required choices and one valid correct answer.
 - Provide a way to maintain and audit the available subjects, years, and question counts.
 
 ### Test generation, timing, and scoring
 
-- Build attempts only from published questions for the selected subject/year; avoid repeating a question inside one attempt.
+- Build attempts only from published questions for the selected exam category and subject, with the selected year/topic filters for self-tests; avoid repeating a question inside one attempt.
 - **Resolved:** Self-test duration is selected from 15, 30, 45, 60, 90, or 120 minutes for the whole test. A mock test lasts 120 minutes.
 - **Resolved:** Scoring is +1 per correct answer, with no negative marking; questions and options are shuffled; score and answer/explanation review are shown after submission; retakes are unlimited.
 - Persist attempt start/end time, selected options, final score, and completion state securely.
@@ -87,9 +89,9 @@ CBT means a separate computer-based test system for JAMB-standard mock preparati
 ## Confirmed product decisions
 
 - Events are visible to all students. Students can RSVP; in-app notifications appear in the navbar. Calendar options are ICS download and Google Calendar. Email, push, and scheduled reminders are out of scope.
-- Self-test durations are 15, 30, 45, 60, 90, or 120 minutes. Standard mocks are 120 minutes, with 60 English questions and 40 per other subject. Self-tests allow students to choose subjects and question counts.
+- Students choose JAMB/UTME or WAEC/NECO, then up to four unique subjects. Self-tests allow a year, all or selected topics, questions per subject, and duration (15, 30, 45, 60, 90, or 120 minutes); when using all topics, sampling is balanced across topics. Mocks preselect English and require three other subjects, use fixed standard counts (60 English and 40 each other subject), and last 120 minutes without year/topic selection.
 - CBT scoring is one point per correct answer with no wrong-answer penalty. Questions and options are shuffled; students can review answers and pace after submission and retake without a limit.
-- Instructors can author questions manually or import them and are responsible for reviewing and publishing. Questions are tagged by subject and year so students can select the material they want to attempt.
+- Instructors can author questions manually or import them and are responsible for reviewing and publishing. Questions are tagged by exam category, subject, year, and topic. Existing questions must be bulk-classified before appearing in the new student flow.
 
 ## Suggested implementation sequence
 
@@ -97,5 +99,5 @@ CBT means a separate computer-based test system for JAMB-standard mock preparati
 2. **Complete:** Implement staff event authoring and publication lifecycle.
 3. **Complete:** Implement student event listing, RSVP, calendar export, and in-app notification delivery.
 4. **Complete:** Implement the teacher CBT question-bank editor and publishing workflow.
-5. **Complete:** Implement subject/year selection, timed self-tests and mocks, navigation, answer persistence, submission, scoring, and review.
-6. **In progress:** Focused shuffle, scoring, calendar, and answer-key privacy tests pass. Add endpoint-level authorization, expiry, retry/idempotency, and end-to-end tests before expanding CBT policies or question formats.
+5. **Complete:** Implement exam cards, topic/year subject selection, timed self-tests and fixed mocks, navigation, answer persistence, submission, scoring, and review.
+6. **In progress:** Unit tests cover topic sampling, mock rules, and bulk classification. Apply the CBT exam/topics migration, classify the existing bank, and verify student and teacher flows with real accounts.

@@ -117,9 +117,11 @@ export default function Login({
                 </div>
               </div>
             </div>}
-            <CardTitle className="text-2xl font-bold text-[#17243B]">Welcome back</CardTitle>
+            <CardTitle className="text-2xl font-bold text-[#17243B]">
+              {inlineModal ? "Sign in to Learnpedia" : "Welcome back"}
+            </CardTitle>
             <CardDescription className="text-base">
-                Sign in to continue your learning journey
+              {inlineModal ? "Choose your account type to continue." : "Sign in to continue your learning journey"}
             </CardDescription>
           </CardHeader>
           <CardContent className={inlineModal ? "px-5 pb-6 sm:px-8 sm:pb-8" : ""}>
@@ -191,7 +193,17 @@ export default function Login({
                 )}
               </div>
 
-              <div className="text-right">
+              <div className="flex items-center justify-between gap-3">
+                {inlineModal && switchToRegister ? (
+                  <button
+                    type="button"
+                    className="text-sm font-medium text-primary hover:underline"
+                    data-testid="link-register"
+                    onClick={switchToRegister}
+                  >
+                    Create account
+                  </button>
+                ) : <span />}
                 <Link href="/forgot-password" className="text-sm text-primary font-medium hover:underline">
                   Forgot password?
                 </Link>

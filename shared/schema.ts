@@ -14,6 +14,7 @@ export const users = pgTable("users", {
   hasActiveSubscription: boolean("has_active_subscription").notNull().default(false),
   subscriptionTier: text("subscription_tier").notNull().default("none"),
   subscriptionPaidAt: timestamp("subscription_paid_at"),
+  subscriptionExpiresAt: timestamp("subscription_expires_at"),
   state: text("state"),
   localGovernmentArea: text("local_government_area"),
   phoneNumber: text("phone_number"),

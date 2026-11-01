@@ -1,4 +1,5 @@
 import type { User } from "@shared/schema";
+import { isSubscriptionActive } from "@shared/payment-plans";
 
 export interface SupabaseProfile {
   id: string;
@@ -8,6 +9,7 @@ export interface SupabaseProfile {
   has_active_subscription: boolean;
   subscription_tier: string;
   subscription_paid_at: string | null;
+  subscription_expires_at: string | null;
   state: string | null;
   local_government_area: string | null;
   phone_number: string | null;
@@ -26,10 +28,16 @@ export function mapSupabaseProfileToUser(profile: SupabaseProfile): User {
     password: "",
     fullName: profile.full_name,
     role: profile.role,
-    hasActiveSubscription: profile.has_active_subscription,
+    hasActiveSubscription: isSubscriptionActive(
+      profile.has_active_subscription,
+      profile.subscription_expires_at,
+    ),
     subscriptionTier: profile.subscription_tier,
     subscriptionPaidAt: profile.subscription_paid_at
       ? new Date(profile.subscription_paid_at)
+      : null,
+    subscriptionExpiresAt: profile.subscription_expires_at
+      ? new Date(profile.subscription_expires_at)
       : null,
     state: profile.state ?? null,
     localGovernmentArea: profile.local_government_area ?? null,

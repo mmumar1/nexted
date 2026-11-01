@@ -6,22 +6,24 @@ This document describes the payment flow for Paystack checkout, manual bank-tran
 
 Implemented:
 
+- Monthly (₦1,000) and yearly (₦5,000) plan selection; each unlocks all courses for its period
 - Paystack checkout initialization
 - Server-side Paystack secret handling
 - Pending payment records
 - Paystack webhook signature verification
-- Subscription activation after `charge.success`
+- Subscription activation and expiration after verified `charge.success`
 - Subscription-owned course access
 - Subscription access removal after failed or refunded payments
 - Upgrade CTA when a learner reaches a subscription-locked module
 - Server-side redemption of 100% coupons, with per-account and usage-limit checks
+- In-app bank-transfer submissions with pending, approved, and rejected states
+- Admin CMS payment-review queue; only verified approvals activate subscriptions
 
 Still to implement:
 
-- Manual bank-transfer submission and admin approval UI
+- Optional in-app receipt-file upload
 - Admin UI for creating and managing coupons
 - Partial-discount coupons and applying discounts to Paystack checkout
-- Combined checkout UI for Paystack and bank transfer
 
 ## Environment variables
 
@@ -32,11 +34,10 @@ VITE_SUPABASE_URL=https://your-project-id.supabase.co
 VITE_SUPABASE_ANON_KEY=your-anon-public-key
 SUPABASE_SERVICE_ROLE_KEY=your-server-only-service-role-key
 PAYSTACK_SECRET_KEY=sk_test_your-paystack-test-secret
-PAYSTACK_PLAN_AMOUNT=200000
 PAYSTACK_CALLBACK_URL=https://your-production-domain.example/profile
 ```
 
-`PAYSTACK_PLAN_AMOUNT` is expressed in kobo. `200000` means NGN 2,000.
+The server derives the selected plan's amount from `shared/payment-plans.ts`; do not set a client-controlled amount.
 
 Never place `SUPABASE_SERVICE_ROLE_KEY` or `PAYSTACK_SECRET_KEY` in a `VITE_` variable.
 
@@ -50,14 +51,20 @@ For a new project, run these files in Supabase SQL Editor:
 schema.sql
 rls.sql
 payment-migration.sql
+subscription-expiry-migration.sql
+manual-payment-approval-migration.sql
 seed.sql
 ```
 
-For an existing project, run only:
+For an existing project that already has payments enabled, run:
 
 ```text
-payment-migration.sql
+subscription-expiry-migration.sql
+manual-payment-approval-migration.sql
 ```
+
+If payments have not been enabled yet, run `payment-migration.sql` first, then `subscription-expiry-migration.sql`.
+Run `manual-payment-approval-migration.sql` after the payment and subscription-expiry migrations to enable manual transfers and admin review.
 
 The payment migration also creates `coupons` and `coupon_redemptions`, the atomic 100%-coupon redemption function, and a profile trigger that prevents browser clients from changing role or subscription fields. Apply it before enabling coupon redemption or relying on server-only subscription activation.
 
@@ -72,44 +79,17 @@ values ('FOUNDING100', 100, 100, now() + interval '60 days');
 
 Set `max_uses` to `null` for no global usage cap. Each account can still redeem a given code only once. A 100% coupon is redeemed on the server, activates the subscription, and grants access without creating a Paystack charge.
 
-The following schema is a design reference for the **future manual bank-transfer feature**. Coupon tables are already created by `payment-migration.sql`; do not run a second, differently shaped coupons table definition.
+The learner submits the selected plan, destination bank, and bank transaction reference from Profile. The server derives the price, creates a pending submission, and prevents duplicate pending submissions or reuse of the same bank reference. The learner can see the review status in Profile. Receipt-file upload is not yet available; staff verify the submitted reference against the bank record.
 
-```sql
-create type public.manual_payment_status as enum (
-  'pending',
-  'approved',
-  'rejected'
-);
-
-create table public.manual_payment_submissions (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references public.profiles(id) on delete cascade,
-  amount numeric(10,2) not null,
-  currency text not null default 'NGN',
-  bank_reference text not null,
-  proof_url text,
-  coupon_code text,
-  status public.manual_payment_status not null default 'pending',
-  reviewed_by uuid references public.profiles(id) on delete set null,
-  reviewed_at timestamptz,
-  review_note text,
-  created_at timestamptz not null default now()
-);
-
-create index idx_manual_payment_user
-  on public.manual_payment_submissions(user_id);
-
-create index idx_manual_payment_status
-  on public.manual_payment_submissions(status);
-```
+Only users with the `super_admin` role can see **Admin CMS -> Payments**, list submissions, or approve/reject them. Users with the `admin` role, instructors, and students cannot review manual payments. Approval is performed by a server-only database function in a single transaction: it checks the super-admin role, pending status, and plan amount; records a successful manual payment; activates the subscription through the plan expiry date; and grants access to published courses. Rejection records the reviewer and optional note without granting access. The browser cannot set a submission to approved or activate a subscription.
 
 ## Paystack checkout flow
 
-1. A learner at the paid-module boundary can choose **Upgrade with Paystack**, which redirects to hosted checkout.
-2. The server derives the amount from `PAYSTACK_PLAN_AMOUNT`, binds checkout to the signed-in Supabase user, and creates a pending `payments` row.
+1. A learner selects the monthly or yearly plan on the Payment section of Profile & settings, then chooses Paystack or bank transfer.
+2. The server derives the Paystack amount from the selected plan, binds checkout to the signed-in Supabase user, and creates a pending `payments` row with the plan in metadata.
 3. Paystack calls `/api/payments/paystack/webhook` after the transaction.
 4. The webhook validates `x-paystack-signature`, reference, successful status, amount, and currency.
-5. A valid `charge.success` changes the payment status and activates the profile subscription.
+5. A valid `charge.success` changes the payment status and activates the profile subscription until the selected plan's expiry date.
 6. The server grants access to published courses with `access_source = 'subscription'`.
 
 Learners with a 100% coupon can redeem it from the Profile page instead. Coupon redemption does not redirect to Paystack or create a charge.
@@ -202,9 +182,11 @@ Create a code in Supabase using the example above. Choose `max_uses` to cap the 
 POST /api/payments/paystack/initialize
 POST /api/payments/paystack/webhook
 POST /api/payments/coupons/redeem
+GET  /api/payments/manual-transfer
+POST /api/payments/manual-transfer
+GET  /api/admin/manual-payments
+POST /api/admin/manual-payments/:id/review
 ```
-
-Manual-payment routes shown in the earlier design are not implemented yet.
 
 All admin payment routes must verify the Supabase access token and load the caller's role from `public.profiles`. Never trust a browser-supplied `userId`, role, amount, discount, or approval status.
 
@@ -216,6 +198,11 @@ All admin payment routes must verify the Supabase access token and load the call
 - A learner cannot unlock courses by editing browser storage.
 - Successful payment updates the subscription badge after refresh.
 - Failed, rejected, or refunded payments do not grant access.
+- A bank-transfer submission remains pending until approved by an administrator.
+- Admin-role users, instructors, and students cannot see the payment section or access the review API.
+- Only a `super_admin` can list, approve, or reject manual-payment submissions.
+- Rejection records its reviewer and note without changing course access.
+- Replaying an approval cannot create a duplicate payment or enrollment.
 
 ## Test checklist
 
@@ -229,3 +216,7 @@ All admin payment routes must verify the Supabase access token and load the call
 8. Confirm the same account cannot redeem that code twice.
 9. Confirm inactive, expired, exhausted, and already-subscribed cases are rejected.
 10. Replay the same webhook and confirm no duplicate payment or enrollment is created.
+11. Submit a bank transfer and confirm it appears pending in Profile and Admin CMS.
+12. Confirm an instructor cannot view or review manual-payment submissions.
+13. Approve a pending transfer and confirm the payment, subscription expiry, and published-course access are recorded.
+14. Reject a pending transfer and confirm no subscription or course access is granted.

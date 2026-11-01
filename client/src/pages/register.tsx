@@ -273,7 +273,7 @@ export default function Register({ inlineModal = false, onClose, switchToLogin }
               </Button>
             </form>
           </CardContent>
-          {!inlineModal && <CardFooter className="flex flex-col space-y-4">
+          {(!inlineModal || switchToLogin) && <CardFooter className="flex flex-col space-y-4">
             <div className="text-sm text-center text-muted-foreground">
               Already have an account?{" "}
               {switchToLogin ? (

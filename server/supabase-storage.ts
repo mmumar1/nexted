@@ -1,4 +1,5 @@
 import dotenv from "dotenv";
+import { isSubscriptionActive } from "@shared/payment-plans";
 import { createSupabaseAdminClient } from "./supabase-admin.js";
 import type { IStorage } from "./storage.js";
 import type {
@@ -37,9 +38,10 @@ function mapProfile(row: DatabaseRow): User {
     password: "",
     fullName: row.full_name,
     role: row.role,
-    hasActiveSubscription: row.has_active_subscription,
+    hasActiveSubscription: isSubscriptionActive(row.has_active_subscription, row.subscription_expires_at),
     subscriptionTier: row.subscription_tier,
     subscriptionPaidAt: row.subscription_paid_at ? new Date(row.subscription_paid_at) : null,
+    subscriptionExpiresAt: row.subscription_expires_at ? new Date(row.subscription_expires_at) : null,
     state: row.state ?? null,
     localGovernmentArea: row.local_government_area ?? null,
     phoneNumber: row.phone_number ?? null,
@@ -146,6 +148,7 @@ export class SupabaseStorage implements IStorage {
       has_active_subscription: user.hasActiveSubscription ?? false,
       subscription_tier: user.subscriptionTier ?? "none",
       subscription_paid_at: user.subscriptionPaidAt?.toISOString() ?? null,
+      subscription_expires_at: user.subscriptionExpiresAt?.toISOString() ?? null,
       state: user.state ?? null,
       local_government_area: user.localGovernmentArea ?? null,
       phone_number: user.phoneNumber ?? null,

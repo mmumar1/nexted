@@ -16,10 +16,10 @@ import { supabase } from "@/lib/supabase";
 import { QuizMarkdownEditor } from "@/components/quiz/quiz-markdown";
 import type { AnnouncementRecord } from "@/lib/announcements";
 import type { Course, Module, QuizQuestion, User } from "@shared/schema";
-import { BarChart3, BookOpen, CalendarDays, ClipboardList, Download, FileQuestion, FileUp, LayoutDashboard, Plus, Settings2, Trash2, UserRound, Users } from "lucide-react";
+import { BarChart3, BookOpen, CalendarDays, ClipboardList, CreditCard, Download, FileQuestion, FileUp, LayoutDashboard, Plus, Settings2, Trash2, UserRound, Users } from "lucide-react";
 import { isInitialEmptyQuizQuestion, parseQuizCsv, type QuizCsvPreview } from "@/lib/quiz-csv";
 
-type Section = "overview" | "courses" | "modules" | "quizzes" | "events" | "cbt" | "users" | "enrollments" | "analytics" | "announcements";
+type Section = "overview" | "courses" | "modules" | "quizzes" | "events" | "cbt" | "users" | "enrollments" | "analytics" | "announcements" | "payments";
 
 interface QuizRecord {
   id: string;
@@ -66,6 +66,21 @@ interface Analytics {
   courseStats: Array<{ id: string; title: string; enrollments: number; completionRate: number }>;
 }
 
+interface ManualPaymentSubmission {
+  id: string;
+  user_id: string;
+  plan: "monthly" | "yearly";
+  amount: number;
+  currency: string;
+  bank_name: string;
+  bank_reference: string;
+  status: "pending" | "approved" | "rejected";
+  review_note: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+  user: { full_name: string; email: string } | null;
+}
+
 const navItems: Array<{ id: Section; label: string; icon: typeof LayoutDashboard }> = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
   { id: "courses", label: "Courses", icon: BookOpen },
@@ -77,11 +92,13 @@ const navItems: Array<{ id: Section; label: string; icon: typeof LayoutDashboard
   { id: "enrollments", label: "Enrollments", icon: Users },
   { id: "analytics", label: "Analytics", icon: BarChart3 },
   { id: "announcements", label: "Announcements", icon: Plus },
+  { id: "payments", label: "Payments", icon: CreditCard },
 ];
 
 const isStaffRole = (role?: string | null) => ["admin", "super_admin", "instructor"].includes(role || "");
-const isSuperAdmin = (role?: string | null) => ["admin", "super_admin"].includes(role || "");
-const sections = new Set<Section>(["overview", "courses", "modules", "quizzes", "events", "cbt", "users", "enrollments", "analytics", "announcements"]);
+const isSuperAdmin = (role?: string | null) => ["admin", "super_admin", "superadmin"].includes(role || "");
+const canReviewPayments = (role?: string | null) => role === "super_admin";
+const sections = new Set<Section>(["overview", "courses", "modules", "quizzes", "events", "cbt", "users", "enrollments", "analytics", "announcements", "payments"]);
 
 function createEmptyQuizQuestion(): QuizQuestionDraft {
   return { id: crypto.randomUUID(), question: "", questionImageUrl: "", explanation: "", explanationImageUrl: "", options: ["", "", "", ""], correctAnswer: "1" };
@@ -130,6 +147,7 @@ export default function AdminCms() {
   const [instructorDraft, setInstructorDraft] = useState({ fullName: "", email: "", password: "" });
   const [createdInstructor, setCreatedInstructor] = useState<{ fullName: string; email: string; temporaryPassword: string } | null>(null);
   const [announcementDraft, setAnnouncementDraft] = useState({ title: "", message: "" });
+  const [paymentReviewNotes, setPaymentReviewNotes] = useState<Record<string, string>>({});
   const courseEditorRef = useRef<HTMLDivElement>(null);
 
   const canManage = !!user && isStaffRole(user.role);
@@ -141,7 +159,7 @@ export default function AdminCms() {
   useEffect(() => {
     const draft = readCmsDraft(adminId);
     if (draft) {
-      if (draft.section) setSection(draft.section);
+      if (draft.section) setSection(draft.section === "payments" && !canReviewPayments(user?.role) ? "overview" : draft.section);
       if (typeof draft.selectedCourseId === "string") setSelectedCourseId(draft.selectedCourseId);
       if (draft.courseDraft) setCourseDraft((current) => ({ ...current, ...draft.courseDraft }));
       if (draft.newCourseDraft) setNewCourseDraft((current) => ({ ...current, ...draft.newCourseDraft }));
@@ -253,7 +271,31 @@ export default function AdminCms() {
     enabled: canManage && section === "analytics",
   });
 
+  const manualPayments = useQuery<ManualPaymentSubmission[]>({
+    queryKey: ["/api/admin/manual-payments"],
+    enabled: canReviewPayments(user?.role) && section === "payments",
+  });
+
   const invalidate = (key: string[]) => queryClient.invalidateQueries({ queryKey: key });
+
+  const reviewManualPayment = useMutation({
+    mutationFn: ({ id, decision }: { id: string; decision: "approved" | "rejected" }) =>
+      apiRequest("POST", `/api/admin/manual-payments/${id}/review`, {
+        decision,
+        reviewNote: paymentReviewNotes[id] || undefined,
+      }),
+    onSuccess: (_result, variables) => {
+      invalidate(["/api/admin/manual-payments"]);
+      setPaymentReviewNotes((notes) => ({ ...notes, [variables.id]: "" }));
+      toast({
+        title: variables.decision === "approved" ? "Transfer approved" : "Transfer rejected",
+        description: variables.decision === "approved"
+          ? "The subscription and course access have been activated."
+          : "The learner can submit a new transfer if needed.",
+      });
+    },
+    onError: (error: Error) => toast({ title: "Could not review transfer", description: error.message, variant: "destructive" }),
+  });
 
   const saveCourse = useMutation({
     mutationFn: () => apiRequest("PATCH", `/api/admin/courses/${selectedCourseId}`, { userId: adminId, course: courseDraft }),
@@ -472,6 +514,7 @@ export default function AdminCms() {
     () => (courses.data || []).filter((course) => isSuperAdmin(user?.role) || !course.instructorId || course.instructorId === user?.id),
     [courses.data, user?.id, user?.role],
   );
+  const visibleNavItems = navItems.filter((item) => item.id !== "payments" || canReviewPayments(user?.role));
 
   return (
     <div className="min-h-screen bg-muted/20">
@@ -480,7 +523,7 @@ export default function AdminCms() {
         <aside className="hidden w-52 shrink-0 md:block">
           <div className="sticky top-24 space-y-1">
             <p className="mb-4 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">CMS workspace</p>
-            {navItems.map(({ id, label, icon: Icon }) => (
+            {visibleNavItems.map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
                 type="button"
@@ -502,7 +545,7 @@ export default function AdminCms() {
               <p className="mt-2 text-muted-foreground">Manage learning content, access, and student progress.</p>
             </div>
             <select className="h-10 rounded-md border bg-background px-3 text-sm md:hidden" value={section} onChange={(event) => setSection(event.target.value as Section)}>
-              {navItems.map((item) => (
+              {visibleNavItems.map((item) => (
                 <option key={item.id} value={item.id}>{item.label}</option>
               ))}
             </select>
@@ -763,6 +806,74 @@ export default function AdminCms() {
               announcements={announcementFeed.data || []}
               onCreate={() => createAnnouncement.mutate()}
             />
+          )}
+
+          {section === "payments" && canReviewPayments(user?.role) && (
+            <div className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Manual bank-transfer reviews</CardTitle>
+                  <CardDescription>Verify each transfer against the bank record before approving. Approval grants the selected subscription and access to published courses.</CardDescription>
+                </CardHeader>
+              </Card>
+              {manualPayments.isPending && <p className="text-sm text-muted-foreground">Loading transfer submissions...</p>}
+              {manualPayments.isError && <p className="text-sm text-destructive">Unable to load payment submissions. Refresh to try again.</p>}
+              {!manualPayments.isPending && !manualPayments.isError && manualPayments.data?.length === 0 && (
+                <Card><CardContent className="py-8 text-center text-sm text-muted-foreground">No bank-transfer submissions yet.</CardContent></Card>
+              )}
+              {manualPayments.data?.map((payment) => (
+                <Card key={payment.id}>
+                  <CardContent className="space-y-4 p-5">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold">{payment.user?.full_name || "Learner"}</p>
+                        <p className="text-sm text-muted-foreground">{payment.user?.email || payment.user_id}</p>
+                      </div>
+                      <Badge variant={payment.status === "pending" ? "secondary" : payment.status === "approved" ? "default" : "destructive"}>
+                        {payment.status}
+                      </Badge>
+                    </div>
+                    <dl className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+                      <div><dt className="text-muted-foreground">Plan / amount</dt><dd className="font-medium capitalize">{payment.plan} · ₦{Number(payment.amount).toLocaleString("en-NG")}</dd></div>
+                      <div><dt className="text-muted-foreground">Transferred to</dt><dd className="font-medium">{payment.bank_name}</dd></div>
+                      <div><dt className="text-muted-foreground">Transaction reference</dt><dd className="break-all font-medium">{payment.bank_reference}</dd></div>
+                      <div><dt className="text-muted-foreground">Submitted</dt><dd>{new Date(payment.created_at).toLocaleString("en-NG")}</dd></div>
+                    </dl>
+                    {payment.review_note && (
+                      <p className="rounded-md bg-muted p-3 text-sm"><span className="font-medium">Review note:</span> {payment.review_note}</p>
+                    )}
+                    {payment.status === "pending" && (
+                      <div className="space-y-3 border-t pt-4">
+                        <Input
+                          aria-label={`Review note for ${payment.user?.email || payment.id}`}
+                          placeholder="Optional note (required context for rejection is recommended)"
+                          value={paymentReviewNotes[payment.id] || ""}
+                          onChange={(event) => setPaymentReviewNotes((notes) => ({ ...notes, [payment.id]: event.target.value }))}
+                          maxLength={500}
+                        />
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            type="button"
+                            disabled={reviewManualPayment.isPending}
+                            onClick={() => reviewManualPayment.mutate({ id: payment.id, decision: "approved" })}
+                          >
+                            Approve and grant access
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            disabled={reviewManualPayment.isPending}
+                            onClick={() => reviewManualPayment.mutate({ id: payment.id, decision: "rejected" })}
+                          >
+                            Reject transfer
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
           )}
         </div>
       </main>

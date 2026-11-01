@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useRoute, useLocation } from "wouter";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Navbar } from "@/components/navbar";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
@@ -14,15 +14,12 @@ import { ModuleContent } from "@/components/course/module-content";
 import { ModuleSidebar, type CourseModuleItem } from "@/components/course/module-sidebar";
 import { isModuleUnlocked } from "@/lib/access-rules";
 import { compareModuleOrder } from "@/lib/module-utils";
-import { apiRequest } from "@/lib/queryClient";
-import { useToast } from "@/hooks/use-toast";
 
 export default function CoursePage() {
   const [, legacyParams] = useRoute("/course/:id");
   const [, moduleParams] = useRoute("/course/:courseId/module/:moduleId");
   const [, setLocation] = useLocation();
   const { user, isAuthenticated } = useAuth();
-  const { toast } = useToast();
   const [isModuleSheetOpen, setModuleSheetOpen] = useState(false);
   const courseId = moduleParams?.courseId || legacyParams?.id || "1";
   const requestedModuleId = moduleParams?.moduleId;
@@ -56,12 +53,6 @@ export default function CoursePage() {
   const { data: dashboardCourses } = useQuery<Array<{ id: string; isUnlocked: boolean }>>({
     queryKey: ["/api/dashboard", user?.id],
     enabled: !!user?.id,
-  });
-
-  const startUpgrade = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/payments/paystack/initialize"),
-    onSuccess: (result: { authorizationUrl: string }) => window.location.assign(result.authorizationUrl),
-    onError: (error: Error) => toast({ title: "Checkout could not start", description: error.message, variant: "destructive" }),
   });
 
   if (!user) return null;
@@ -242,11 +233,11 @@ export default function CoursePage() {
               previousModule={previousModule}
               nextModule={nextModule}
               requiresSubscription={!!nextModuleCandidate?.requiresSubscription}
-              isStartingUpgrade={startUpgrade.isPending}
+              isStartingUpgrade={false}
               onTakeQuiz={() => handleTakeQuiz(activeModule.id)}
               onSelectModule={handleSelectModule}
-              onUpgrade={() => startUpgrade.mutate()}
-              onRedeemCoupon={() => setLocation("/profile?upgrade=1")}
+              onUpgrade={() => setLocation("/profile#payment-options")}
+              onRedeemCoupon={() => setLocation("/profile#coupon-code")}
             />
           </div>
         ) : (

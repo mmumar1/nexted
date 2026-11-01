@@ -91,17 +91,16 @@ For an existing project, run `module-video-urls-migration.sql` in the Supabase S
 
 ## Paystack setup
 
-For an existing database, run `payment-migration.sql`. For a new database, `schema.sql` already includes the subscription access column.
+For an existing database, run `payment-migration.sql`, `subscription-expiry-migration.sql`, and `manual-payment-approval-migration.sql` in that order. For a new database, run `schema.sql`, `rls.sql`, `payment-migration.sql`, `subscription-expiry-migration.sql`, and `manual-payment-approval-migration.sql`.
 
 Set these server-side variables locally and in Vercel:
 
 ```env
 PAYSTACK_SECRET_KEY=sk_test_your_paystack_test_secret
-PAYSTACK_PLAN_AMOUNT=100000
 PAYSTACK_CALLBACK_URL=http://localhost:5000/profile
 ```
 
-`PAYSTACK_PLAN_AMOUNT` is in kobo, so `100000` means NGN 1,000. The browser never receives the secret key.
+Plan prices are configured in `shared/payment-plans.ts` and enforced by the server. The browser never receives the Paystack secret key.
 
 Configure the Paystack webhook URL as:
 
@@ -143,8 +142,9 @@ SUPABASE_URL=https://your-project-id.supabase.co
 SUPABASE_ANON_KEY=your-anon-public-key
 SUPABASE_SERVICE_ROLE_KEY=your-server-only-service-role-key
 PAYSTACK_SECRET_KEY=sk_live_or_sk_test_your-secret
-PAYSTACK_PLAN_AMOUNT=100000
 ```
+
+The server derives plan prices from `shared/payment-plans.ts`.
 
 `PAYSTACK_CALLBACK_URL` is optional on Vercel: the server builds the HTTPS Profile URL from Vercel's production hostname, or the deployment hostname for previews. Set it explicitly if you use a different public URL. Other production hosts must provide this variable as an HTTPS URL.
 

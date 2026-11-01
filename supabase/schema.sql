@@ -18,6 +18,7 @@ create table public.profiles (
   has_active_subscription boolean not null default false,
   subscription_tier text not null default 'none',
   subscription_paid_at timestamptz,
+  subscription_expires_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -112,7 +113,7 @@ create table public.announcements (
 create table public.payments (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.profiles(id) on delete cascade,
-  provider text not null check (provider in ('stripe', 'paystack')),
+  provider text not null check (provider in ('stripe', 'paystack', 'manual')),
   provider_ref text not null,
   amount numeric(10,2) not null,
   currency text not null default 'NGN',
@@ -122,9 +123,30 @@ create table public.payments (
   updated_at timestamptz not null default now()
 );
 
+create type public.manual_payment_status as enum ('pending', 'approved', 'rejected');
+
+create table public.manual_payment_submissions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  plan text not null check (plan in ('monthly', 'yearly')),
+  amount numeric(10,2) not null check (amount > 0),
+  currency text not null default 'NGN' check (currency = 'NGN'),
+  bank_name text not null check (bank_name in ('Sterling Bank', 'OPay')),
+  bank_reference text not null,
+  status public.manual_payment_status not null default 'pending',
+  reviewed_by uuid references public.profiles(id) on delete set null,
+  reviewed_at timestamptz,
+  review_note text,
+  created_at timestamptz not null default now()
+);
+
 create index idx_profiles_role on public.profiles(role);
 create index idx_courses_instructor on public.courses(instructor_id);
 create index idx_modules_course on public.modules(course_id);
 create index idx_announcement_created_at on public.announcements(created_at desc);
 create index idx_payments_user on public.payments(user_id);
 create unique index idx_payments_provider_ref on public.payments(provider, provider_ref);
+create index idx_manual_payment_user on public.manual_payment_submissions(user_id);
+create index idx_manual_payment_status_created on public.manual_payment_submissions(status, created_at);
+create unique index idx_manual_payment_one_pending_per_user on public.manual_payment_submissions(user_id) where status = 'pending';
+create unique index idx_manual_payment_bank_reference on public.manual_payment_submissions(bank_name, lower(btrim(bank_reference)));

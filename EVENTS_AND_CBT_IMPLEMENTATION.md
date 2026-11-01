@@ -78,13 +78,20 @@ CBT means a separate computer-based test system for JAMB-standard mock preparati
 ## Decisions to confirm before full implementation
 
 - Which calendar destinations are required: downloadable ICS, Google Calendar, Outlook, device calendar, or calendar subscription?
+Answer: Google calender or any free suitable option.
 - Which notification channels are in scope, and what reminder schedule should apply?
+Answer; Use the in App notification icon to display all the notificatios.
 - Are Events visible to every student or only course/enrollment-specific audiences? Can students RSVP?
+Answer: Events are visible to all student's and student's can RSVP.
 - What is the CBT duration for English, each other subject, and multi-subject combined tests?
+Answer: for the self test, students can choose their own duration from a dropdown
 - Is the 40-question count required independently for every selected non-English subject?
+Answer: the student should be allowed to select the numbers of questions they want for a self test but for a mock test it should be the standard 40 or 60 questions.
 - What are the scoring, negative-marking, question-randomization, answer-review, and retake policies?
 - How will teachers supply questions initially (manual entry, CSV import, or both), and who reviews/publishes them?
+Answers: Questions should be uploaded in using a combination of manual and import. the instructor reviews and publish.
 - Should CBT content be organized by year only, or also by exam session/version?
+Answer: Candidate can select which year of question they want to access, this means when an instructor create a questions bank of rEnglish e.t.c they can add which year the question belongs to, the student can go ahead and add more subjects and selecting the year they want to attemmpt.
 
 ## Suggested implementation sequence
 

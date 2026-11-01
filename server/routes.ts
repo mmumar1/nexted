@@ -1,6 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { createHmac, randomBytes, timingSafeEqual } from "crypto";
+import { getSubscriptionExpiryDate, isPaymentPlanId, isSubscriptionActive, PAYMENT_PLANS, type PaymentPlanId } from "../shared/payment-plans.js";
 import { storage } from "./storage.js";
 import {
   insertUserSchema,
@@ -125,12 +126,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   };
 
   const isSuperAdmin = (role?: string | null) => ["admin", "super_admin", "superadmin"].includes(role || "");
+  const canReviewManualPayments = (role?: string | null) => role === "super_admin";
 
   const canAccessModule = async (userId: string, module: Module) => {
     const courseModules = await storage.getModulesByCourse(module.courseId);
     const orderedModules = courseModules.sort((a, b) => compareModuleOrder(a, b, courseModules));
     const moduleIndex = orderedModules.findIndex((item) => item.id === module.id);
     if (moduleIndex < 0) return false;
+    if (moduleIndex >= 2) {
+      const user = await storage.getUser(userId);
+      const isStaff = user && ["admin", "super_admin", "superadmin", "instructor"].includes(user.role);
+      if (!isStaff && !user?.hasActiveSubscription) return false;
+    }
 
     const requirements = new Map<string, Module>(
       orderedModules.slice(0, moduleIndex).map((previousModule) => [previousModule.id, previousModule]),
@@ -333,7 +340,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   const getPaystackConfig = () => {
     const secretKey = process.env.PAYSTACK_SECRET_KEY;
-    const amount = Number(process.env.PAYSTACK_PLAN_AMOUNT || "200000");
     const isProduction = process.env.NODE_ENV === "production";
     const vercelHostname = process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.VERCEL_URL;
     const callbackUrl = process.env.PAYSTACK_CALLBACK_URL
@@ -342,7 +348,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (!secretKey || secretKey.includes("replace_with")) {
       throw new Error("Paystack server configuration is missing");
     }
-    if (!Number.isInteger(amount) || amount <= 0) throw new Error("PAYSTACK_PLAN_AMOUNT must be a positive integer in kobo");
     let parsedCallbackUrl: URL;
     try {
       parsedCallbackUrl = new URL(callbackUrl);
@@ -352,7 +357,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (isProduction && parsedCallbackUrl.protocol !== "https:") {
       throw new Error("PAYSTACK_CALLBACK_URL must be an HTTPS URL in production; configure it or deploy with a Vercel hostname");
     }
-    return { secretKey, amount, callbackUrl };
+    return { secretKey, callbackUrl };
   };
 
   const verifyAccessToken = async (req: any) => {
@@ -364,12 +369,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     return data.user;
   };
 
-  const updateSubscriptionAccess = async (userId: string, active: boolean, reference: string) => {
+  const updateSubscriptionAccess = async (
+    userId: string,
+    active: boolean,
+    reference: string,
+    plan: PaymentPlanId | "one-time" = "one-time",
+    completedAt?: Date,
+  ) => {
     const client = createSupabaseAdminClient();
+    const paidAt = active ? completedAt ?? new Date() : null;
     const { error: profileError } = await client.from("profiles").update({
       has_active_subscription: active,
-      subscription_tier: active ? "one-time" : "none",
-      subscription_paid_at: active ? new Date().toISOString() : null,
+      subscription_tier: active ? plan : "none",
+      subscription_paid_at: paidAt?.toISOString() ?? null,
+      subscription_expires_at: active && paidAt && plan !== "one-time"
+        ? getSubscriptionExpiryDate(plan, paidAt).toISOString()
+        : null,
     }).eq("id", userId);
     if (profileError) throw new Error(profileError.message);
 
@@ -401,11 +416,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = await verifyAccessToken(req);
       if (!user) return res.status(401).json({ error: "Valid Supabase session required" });
-      const { secretKey, amount, callbackUrl } = getPaystackConfig();
+      const { plan } = z.object({ plan: z.enum(["monthly", "yearly"]) }).parse({
+        plan: req.body?.plan ?? req.query.plan,
+      });
+      const { secretKey, callbackUrl } = getPaystackConfig();
+      const amount = PAYMENT_PLANS[plan].amount * 100;
       const adminClient = createSupabaseAdminClient();
-      const { data: profile, error: profileError } = await adminClient.from("profiles").select("has_active_subscription").eq("id", user.id).single();
+      const { data: profile, error: profileError } = await adminClient.from("profiles").select("has_active_subscription, subscription_expires_at").eq("id", user.id).single();
       if (profileError || !profile) return res.status(500).json({ error: "Unable to verify subscription status" });
-      if (profile.has_active_subscription) return res.status(409).json({ error: "A subscription is already active" });
+      if (isSubscriptionActive(profile.has_active_subscription, profile.subscription_expires_at)) {
+        return res.status(409).json({ error: "Your subscription is already active" });
+      }
+      const { data: pendingTransfer, error: pendingTransferError } = await adminClient
+        .from("manual_payment_submissions")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("status", "pending")
+        .maybeSingle();
+      if (pendingTransferError) return res.status(500).json({ error: "Unable to check pending bank transfers" });
+      if (pendingTransfer) return res.status(409).json({ error: "A bank transfer is awaiting administrator review" });
       const reference = `learnpedia_${randomBytes(12).toString("hex")}`;
       const paystackResponse = await fetch("https://api.paystack.co/transaction/initialize", {
         method: "POST",
@@ -422,13 +451,143 @@ export async function registerRoutes(app: Express): Promise<Server> {
         amount: amount / 100,
         currency: "NGN",
         status: "pending",
-        metadata: { access_code: result.data.access_code },
+        metadata: { access_code: result.data.access_code, plan },
       });
       if (error) return res.status(500).json({ error: error.message });
       res.json({ authorizationUrl: result.data.authorization_url, reference: result.data.reference });
     } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
       if (error instanceof Error && (error.message.includes("Paystack") || error.message.includes("PAYSTACK"))) return res.status(503).json({ error: error.message });
       res.status(500).json({ error: "Unable to initialize payment" });
+    }
+  });
+
+  app.get("/api/payments/manual-transfer", async (req, res) => {
+    try {
+      const user = await verifyAccessToken(req);
+      if (!user) return res.status(401).json({ error: "Valid Supabase session required" });
+      const client = createSupabaseAdminClient();
+      const { data, error } = await client
+        .from("manual_payment_submissions")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false });
+      if (error) return res.status(500).json({ error: "Unable to fetch transfer submissions" });
+      res.json(data ?? []);
+    } catch {
+      res.status(500).json({ error: "Unable to fetch transfer submissions" });
+    }
+  });
+
+  app.post("/api/payments/manual-transfer", async (req, res) => {
+    try {
+      const user = await verifyAccessToken(req);
+      if (!user) return res.status(401).json({ error: "Valid Supabase session required" });
+      const { plan, bankName, bankReference } = z.object({
+        plan: z.enum(["monthly", "yearly"]),
+        bankName: z.enum(["Sterling Bank", "OPay"]),
+        bankReference: z.string().trim().min(4).max(120),
+      }).parse(req.body);
+
+      const client = createSupabaseAdminClient();
+      const { data: profile, error: profileError } = await client
+        .from("profiles")
+        .select("has_active_subscription, subscription_expires_at")
+        .eq("id", user.id)
+        .single();
+      if (profileError || !profile) return res.status(500).json({ error: "Unable to verify subscription status" });
+      if (isSubscriptionActive(profile.has_active_subscription, profile.subscription_expires_at)) {
+        return res.status(409).json({ error: "Your subscription is already active" });
+      }
+
+      const { data: pendingSubmission, error: pendingError } = await client
+        .from("manual_payment_submissions")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("status", "pending")
+        .maybeSingle();
+      if (pendingError) return res.status(500).json({ error: "Unable to check pending transfers" });
+      if (pendingSubmission) return res.status(409).json({ error: "You already have a transfer awaiting review" });
+
+      const { data, error } = await client
+        .from("manual_payment_submissions")
+        .insert({
+          user_id: user.id,
+          plan,
+          amount: PAYMENT_PLANS[plan].amount,
+          currency: "NGN",
+          bank_name: bankName,
+          bank_reference: bankReference,
+        })
+        .select("*")
+        .single();
+      if (error) {
+        if (error.code === "23505") return res.status(409).json({ error: "This transaction reference has already been submitted, or a transfer is already awaiting review" });
+        return res.status(500).json({ error: "Unable to submit transfer for review" });
+      }
+      res.status(201).json(data);
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
+      res.status(500).json({ error: "Unable to submit transfer for review" });
+    }
+  });
+
+  app.get("/api/admin/manual-payments", async (req, res) => {
+    try {
+      const reviewer = await requireAuthenticatedStaff(req, res);
+      if (!reviewer) return;
+      if (!canReviewManualPayments(reviewer.role)) return res.status(403).json({ error: "Super administrator access required" });
+
+      const client = createSupabaseAdminClient();
+      const { data: submissions, error } = await client
+        .from("manual_payment_submissions")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (error) return res.status(500).json({ error: "Unable to fetch manual payment submissions" });
+
+      const userIds = Array.from(new Set((submissions ?? []).map((submission) => submission.user_id)));
+      const { data: profiles, error: profilesError } = userIds.length
+        ? await client.from("profiles").select("id, full_name, email").in("id", userIds)
+        : { data: [], error: null };
+      if (profilesError) return res.status(500).json({ error: "Unable to fetch payment account details" });
+      const profilesById = new Map((profiles ?? []).map((profile) => [profile.id, profile]));
+      res.json((submissions ?? []).map((submission) => ({
+        ...submission,
+        user: profilesById.get(submission.user_id) ?? null,
+      })));
+    } catch {
+      res.status(500).json({ error: "Unable to fetch manual payment submissions" });
+    }
+  });
+
+  app.post("/api/admin/manual-payments/:id/review", async (req, res) => {
+    try {
+      const reviewer = await requireAuthenticatedStaff(req, res);
+      if (!reviewer) return;
+      if (!canReviewManualPayments(reviewer.role)) return res.status(403).json({ error: "Super administrator access required" });
+
+      const { decision, reviewNote } = z.object({
+        decision: z.enum(["approved", "rejected"]),
+        reviewNote: z.string().trim().max(500).optional(),
+      }).parse(req.body);
+      const submissionId = z.string().uuid().parse(req.params.id);
+      const { data, error } = await createSupabaseAdminClient().rpc("review_manual_payment", {
+        p_submission_id: submissionId,
+        p_reviewer_id: reviewer.id,
+        p_decision: decision,
+        p_review_note: reviewNote || null,
+      });
+      if (error) {
+        if (error.code === "P0002") return res.status(404).json({ error: error.message });
+        if (error.code === "P0001") return res.status(409).json({ error: error.message });
+        if (error.code === "42501") return res.status(403).json({ error: error.message });
+        if (error.code === "22023") return res.status(400).json({ error: error.message });
+        return res.status(500).json({ error: "Unable to review manual payment" });
+      }
+      res.json(data);
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
+      res.status(500).json({ error: "Unable to review manual payment" });
     }
   });
 
@@ -466,7 +625,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "Invalid Paystack signature" });
       }
 
-      const event = req.body as { event?: string; data?: { reference?: string; amount?: number; currency?: string; status?: string } };
+      const event = req.body as { event?: string; data?: { reference?: string; amount?: number; currency?: string; status?: string; paid_at?: string } };
       const reference = event.data?.reference;
       if (!reference) return res.status(400).json({ error: "Payment reference missing" });
       const client = createSupabaseAdminClient();
@@ -490,7 +649,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const { error: updateError } = await client.from("payments").update({ status: nextStatus, metadata: { ...(payment.metadata || {}), webhook_event: event.event } }).eq("id", payment.id);
       if (updateError) return res.status(500).json({ error: updateError.message });
-      if (nextStatus === "success") await updateSubscriptionAccess(payment.user_id, true, reference);
+      if (nextStatus === "success") {
+        const plan = isPaymentPlanId(payment.metadata?.plan) ? payment.metadata.plan : "one-time";
+        const paidAt = event.data?.paid_at ? new Date(event.data.paid_at) : undefined;
+        await updateSubscriptionAccess(
+          payment.user_id,
+          true,
+          reference,
+          plan,
+          paidAt && Number.isFinite(paidAt.getTime()) ? paidAt : undefined,
+        );
+      }
       if (nextStatus === "failed" || nextStatus === "refunded") await updateSubscriptionAccess(payment.user_id, false, reference);
       res.json({ received: true });
     } catch (error) {
@@ -566,6 +735,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           hasActiveSubscription: profile.has_active_subscription,
           subscriptionTier: profile.subscription_tier,
           subscriptionPaidAt: profile.subscription_paid_at,
+          subscriptionExpiresAt: profile.subscription_expires_at,
           state: profile.state ?? null,
           localGovernmentArea: profile.local_government_area ?? null,
           phoneNumber: profile.phone_number ?? null,

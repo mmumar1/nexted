@@ -12,6 +12,7 @@ const profile: SupabaseProfile = {
   has_active_subscription: true,
   subscription_tier: "one-time",
   subscription_paid_at: "2026-09-06T10:00:00.000Z",
+  subscription_expires_at: null,
   state: "Lagos",
   local_government_area: "Ikeja",
   phone_number: "+234 801 234 5678",
@@ -32,6 +33,7 @@ describe("Supabase auth helpers", () => {
       hasActiveSubscription: true,
       subscriptionTier: "one-time",
       subscriptionPaidAt: new Date("2026-09-06T10:00:00.000Z"),
+      subscriptionExpiresAt: null,
       state: "Lagos",
       localGovernmentArea: "Ikeja",
       phoneNumber: "+234 801 234 5678",
@@ -44,6 +46,17 @@ describe("Supabase auth helpers", () => {
     const user = mapSupabaseProfileToUser({ ...profile, subscription_paid_at: null });
 
     assert.equal(user.subscriptionPaidAt, null);
+  });
+
+  it("expires subscriptions based on the saved end date", () => {
+    const user = mapSupabaseProfileToUser({
+      ...profile,
+      subscription_tier: "monthly",
+      subscription_expires_at: "2020-01-01T00:00:00.000Z",
+    });
+
+    assert.equal(user.subscriptionExpiresAt?.toISOString(), "2020-01-01T00:00:00.000Z");
+    assert.equal(user.hasActiveSubscription, false);
   });
 
   it("recognizes every staff role but not students", () => {

@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useRef, type ReactNode } from "react";
 import type { User } from "@shared/schema";
+import { isSubscriptionActive } from "@shared/payment-plans";
 import { supabase } from "@/lib/supabase";
 import { mapSupabaseProfileToUser, type SupabaseProfile } from "@/lib/auth-utils";
 
@@ -15,9 +16,10 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 function normalizeUser(user: User): User {
   return {
     ...user,
-    hasActiveSubscription: !!user.hasActiveSubscription,
+    hasActiveSubscription: isSubscriptionActive(user.hasActiveSubscription, user.subscriptionExpiresAt),
     subscriptionTier: user.subscriptionTier ?? "none",
     subscriptionPaidAt: user.subscriptionPaidAt ? new Date(user.subscriptionPaidAt as unknown as string | Date) : null,
+    subscriptionExpiresAt: user.subscriptionExpiresAt ? new Date(user.subscriptionExpiresAt as unknown as string | Date) : null,
   };
 }
 
@@ -101,6 +103,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       document.removeEventListener("visibilitychange", refreshSessionProfile);
       authListener.subscription.unsubscribe();
     };
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setUser((current) => current ? normalizeUser(current) : current);
+    }, 60_000);
+    return () => window.clearInterval(timer);
   }, []);
 
   const login = (user: User) => {

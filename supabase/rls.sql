@@ -284,3 +284,18 @@ using (
     where p.id = auth.uid() and p.role in ('admin', 'super_admin')
   )
 );
+
+alter table public.manual_payment_submissions enable row level security;
+
+create policy "Users can view their own manual payment submissions"
+on public.manual_payment_submissions for select
+using (auth.uid() = user_id);
+
+create policy "Super admins can view all manual payment submissions"
+on public.manual_payment_submissions for select
+using (
+  exists (
+    select 1 from public.profiles p
+    where p.id = auth.uid() and p.role = 'super_admin'
+  )
+);

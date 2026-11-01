@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import Login from "@/pages/login";
 import Register from "@/pages/register";
+import { PAYMENT_PLANS } from "@shared/payment-plans";
 import { useAuth } from "@/lib/auth-context";
 import { isStaffRole } from "@/lib/auth-utils";
 import { WhatsAppFloat } from "@/components/whatsapp-float";
@@ -144,30 +145,30 @@ const popularCourses = [
 const pricingPlans = [
   {
     name: "Monthly",
-    price: "₦9,500",
+    price: `₦${PAYMENT_PLANS.monthly.amount.toLocaleString("en-NG")}`,
     cadence: "/month",
-    description: "Flexible access for learners who want ongoing learning support.",
+    description: "Full learning access for one month.",
     highlight: false,
     badge: "Flexible",
     features: [
-      "Full course access",
+      "Unlocks all courses",
       "All learning packs included",
       "Progress tracking",
-      "Support for ongoing study",
+      "Access for 1 month",
     ],
   },
   {
     name: "Yearly",
-    price: "₦95,000",
+    price: `₦${PAYMENT_PLANS.yearly.amount.toLocaleString("en-NG")}`,
     cadence: "/year",
-    description: "Best value for consistent learners and long-term momentum.",
+    description: "A full year of learning at our best value.",
     highlight: true,
-    badge: "Save 17%",
+    badge: "Save 58%",
     features: [
-      "Full course access",
+      "Unlocks all courses",
       "All learning packs included",
-      "Priority support",
-      "Lower effective monthly cost",
+      "Access for 1 year",
+      "Save ₦7,000 vs monthly",
     ],
   },
 ];
@@ -222,40 +223,20 @@ export default function Landing() {
     <main className="min-h-screen" style={{ backgroundColor: brand.background, color: brand.navy }}>
       <Dialog open={authDialogOpen} onOpenChange={setAuthDialogOpen}>
         <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-2xl overflow-hidden rounded-2xl border-white/70 bg-white p-0 shadow-[0_28px_90px_rgba(23,36,59,0.28)] [&>button]:right-4 [&>button]:top-4 [&>button]:z-20 [&>button]:rounded-full [&>button]:bg-[#F3F9F9] [&>button]:p-2 [&>button]:opacity-80 [&>button]:shadow-sm [&>button]:hover:opacity-100 sm:max-w-2xl">
-          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto">
-            <div className="sticky top-0 z-10 border-b border-[#17243B]/[0.06] bg-white/95 px-5 pb-4 pt-5 backdrop-blur sm:px-8 sm:pt-7">
-              <div className="mb-5 pr-10">
-                <p className="text-xl font-extrabold tracking-tight text-[#17243B]">Learnpedia</p>
-                <p className="mt-1 text-xs font-bold tracking-[0.14em] text-[#20A99A]">LEARN WITHOUT LIMITS</p>
-              </div>
-              <div className="grid grid-cols-2 rounded-xl bg-[#F3F9F9] p-1" role="tablist" aria-label="Choose an account action">
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={authMode === "login"}
-                  onClick={() => setAuthMode("login")}
-                  className={`rounded-lg px-4 py-2.5 text-sm font-bold transition-all ${authMode === "login" ? "bg-white text-[#17243B] shadow-sm" : "text-[#17243B]/55 hover:text-[#17243B]"}`}
-                >
-                  Log in
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={authMode === "register"}
-                  onClick={() => setAuthMode("register")}
-                  className={`rounded-lg px-4 py-2.5 text-sm font-bold transition-all ${authMode === "register" ? "bg-white text-[#17243B] shadow-sm" : "text-[#17243B]/55 hover:text-[#17243B]"}`}
-                >
-                  Create account
-                </button>
-              </div>
-            </div>
-            <div className="px-2 pb-3 sm:px-4">
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto px-2 py-3 sm:px-4">
               {authMode === "login" ? (
-                <Login inlineModal onClose={() => setAuthDialogOpen(false)} />
+                <Login
+                  inlineModal
+                  onClose={() => setAuthDialogOpen(false)}
+                  switchToRegister={() => setAuthMode("register")}
+                />
               ) : (
-                <Register inlineModal onClose={() => setAuthDialogOpen(false)} />
+                <Register
+                  inlineModal
+                  onClose={() => setAuthDialogOpen(false)}
+                  switchToLogin={() => setAuthMode("login")}
+                />
               )}
-            </div>
           </div>
         </DialogContent>
       </Dialog>

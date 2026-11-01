@@ -1,4 +1,7 @@
 -- Run this only when schema.sql was executed before payment access tracking was added.
+alter table public.profiles
+  add column if not exists subscription_expires_at timestamptz;
+
 alter table public.user_courses
   add column if not exists access_source text not null default 'manual';
 
@@ -78,7 +81,13 @@ begin
     raise exception 'Account profile not found' using errcode = 'P0001';
   end if;
 
-  if exists (select 1 from public.profiles where id = p_user_id and has_active_subscription) then
+  if exists (
+    select 1
+    from public.profiles
+    where id = p_user_id
+      and has_active_subscription
+      and (subscription_expires_at is null or subscription_expires_at > now())
+  ) then
     raise exception 'A subscription is already active' using errcode = 'P0001';
   end if;
 
@@ -92,7 +101,8 @@ begin
   update public.profiles
   set has_active_subscription = true,
       subscription_tier = 'one-time',
-      subscription_paid_at = now()
+      subscription_paid_at = now(),
+      subscription_expires_at = null
   where id = p_user_id;
 
   insert into public.user_courses (user_id, course_id, access_source)
@@ -120,6 +130,7 @@ begin
       or new.has_active_subscription is distinct from old.has_active_subscription
       or new.subscription_tier is distinct from old.subscription_tier
       or new.subscription_paid_at is distinct from old.subscription_paid_at
+      or new.subscription_expires_at is distinct from old.subscription_expires_at
     ) then
     raise exception 'Role and subscription changes must be made by the server';
   end if;

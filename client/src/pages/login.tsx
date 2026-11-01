@@ -6,7 +6,7 @@ import { loginSchema, type LoginData } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { Link } from "wouter";
 import { useAuth } from "@/lib/auth-context";
@@ -118,10 +118,10 @@ export default function Login({
               </div>
             </div>}
             <CardTitle className="text-2xl font-bold text-[#17243B]">
-              {inlineModal ? "Sign in to Learnpedia" : "Welcome back"}
+              Sign in to Learnpedia
             </CardTitle>
             <CardDescription className="text-base">
-              {inlineModal ? "Choose your account type to continue." : "Sign in to continue your learning journey"}
+              Choose your account type to continue.
             </CardDescription>
           </CardHeader>
           <CardContent className={inlineModal ? "px-5 pb-6 sm:px-8 sm:pb-8" : ""}>
@@ -194,7 +194,7 @@ export default function Login({
               </div>
 
               <div className="flex items-center justify-between gap-3">
-                {inlineModal && switchToRegister ? (
+                {switchToRegister ? (
                   <button
                     type="button"
                     className="text-sm font-medium text-primary hover:underline"
@@ -203,7 +203,11 @@ export default function Login({
                   >
                     Create account
                   </button>
-                ) : <span />}
+                ) : (
+                  <Link href="/register" className="text-sm font-medium text-primary hover:underline" data-testid="link-register">
+                    Create account
+                  </Link>
+                )}
                 <Link href="/forgot-password" className="text-sm text-primary font-medium hover:underline">
                   Forgot password?
                 </Link>
@@ -232,25 +236,6 @@ export default function Login({
               </Button>
             </form>
           </CardContent>
-          {!inlineModal && <CardFooter className="flex flex-col space-y-4">
-            <div className="text-sm text-center text-muted-foreground">
-              Don't have an account?{" "}
-              {switchToRegister ? (
-                <button
-                  type="button"
-                  className="text-primary font-medium hover:underline"
-                  data-testid="link-register"
-                  onClick={switchToRegister}
-                >
-                  Create account
-                </button>
-              ) : (
-                <Link href="/register" className="text-primary font-medium hover:underline" data-testid="link-register">
-                  Create account
-                </Link>
-              )}
-            </div>
-          </CardFooter>}
         </Card>
 
         {!inlineModal && (

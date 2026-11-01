@@ -1,5 +1,5 @@
 import dotenv from "dotenv";
-import { isSubscriptionActive } from "@shared/payment-plans";
+import { isSubscriptionActive } from "../shared/payment-plans.js";
 import { createSupabaseAdminClient } from "./supabase-admin.js";
 import type { IStorage } from "./storage.js";
 import type {
@@ -31,7 +31,7 @@ import type {
   QuizAttempt,
   User,
   UserCourse,
-} from "@shared/schema";
+} from "../shared/schema.js";
 
 // The server reads the local file during development; production uses platform env vars.
 dotenv.config({ path: ".env.local" });

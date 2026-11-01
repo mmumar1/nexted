@@ -103,6 +103,9 @@ alter table public.cbt_attempts enable row level security;
 alter table public.cbt_attempt_answers enable row level security;
 alter table public.projects enable row level security;
 alter table public.announcements enable row level security;
+alter table public.events enable row level security;
+alter table public.event_rsvps enable row level security;
+alter table public.event_notifications enable row level security;
 alter table public.payments enable row level security;
 
 -- Profiles

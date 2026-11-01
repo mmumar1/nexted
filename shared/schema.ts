@@ -297,6 +297,78 @@ export const cbtAttemptAnswers = pgTable("cbt_attempt_answers", {
   answeredAt: timestamp("answered_at").notNull().defaultNow(),
 });
 
+export const events = pgTable("events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  title: text("title").notNull(),
+  description: text("description").notNull(),
+  startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+  endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
+  timezone: text("timezone").notNull(),
+  location: text("location"),
+  meetingUrl: text("meeting_url"),
+  status: text("status").notNull().default("draft"),
+  revision: integer("revision").notNull().default(0),
+  authorId: varchar("author_id").notNull(),
+  publishedAt: timestamp("published_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type EventStatus = "draft" | "published" | "cancelled";
+export type EventRsvpStatus = "attending" | "not_attending";
+
+export interface EventRecord {
+  id: string;
+  title: string;
+  description: string;
+  startsAt: Date;
+  endsAt: Date;
+  timezone: string;
+  location: string | null;
+  meetingUrl: string | null;
+  status: EventStatus;
+  revision: number;
+  authorId: string;
+  authorName: string;
+  publishedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+  rsvpCount: number;
+  rsvpStatus: EventRsvpStatus | null;
+}
+
+export interface EventNotification {
+  id: string;
+  eventId: string;
+  revision: number;
+  title: string;
+  startsAt: Date;
+  status: EventStatus;
+  createdAt: Date;
+  readAt: Date | null;
+}
+
+export interface EventInput {
+  title: string;
+  description: string;
+  startsAt: Date;
+  endsAt: Date;
+  timezone: string;
+  location?: string;
+  meetingUrl?: string;
+}
+
+export interface EventFilters {
+  authorId?: string;
+}
+
+export interface EventRsvp {
+  eventId: string;
+  studentId: string;
+  status: EventRsvpStatus;
+  updatedAt: Date;
+}
+
 // Quiz attempts table
 export const quizAttempts = pgTable("quiz_attempts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

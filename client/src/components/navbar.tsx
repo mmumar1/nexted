@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bell, BookOpen, CalendarClock, CalendarDays, ClipboardList, FolderKanban, LayoutDashboard, LogOut, Medal, Menu, MessageCircle, Moon, Sun } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Sheet, SheetClose, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
+import { useToast } from "@/hooks/use-toast";
 import { WhatsAppFloat } from "@/components/whatsapp-float";
 import { useAuth } from "@/lib/auth-context";
 import type { AnnouncementRecord } from "@/lib/announcements";
@@ -26,6 +27,17 @@ interface LeaderboardStatus {
   tiers: LeaderboardTier[];
 }
 
+interface EventNotificationRecord {
+  id: string;
+  eventId: string;
+  revision: number;
+  title: string;
+  startsAt: string;
+  status: "published" | "cancelled";
+  createdAt: string;
+  readAt: string | null;
+}
+
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/courses", label: "My Courses", icon: BookOpen },
@@ -37,9 +49,25 @@ export function Navbar() {
   const { user, logout } = useAuth();
   const [isDarkMode, setIsDarkMode] = useState(() => window.localStorage.getItem("beehub-theme") === "dark");
   const [now, setNow] = useState(() => new Date());
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
   const { data: announcements = [], isLoading: announcementsLoading, isError: announcementsError } = useQuery<AnnouncementRecord[]>({
     queryKey: ["/api/announcements"],
     enabled: !!user,
+  });
+  const { data: eventNotifications = [], isLoading: eventNotificationsLoading, isError: eventNotificationsError } = useQuery<EventNotificationRecord[]>({
+    queryKey: ["/api/events/notifications", user?.id],
+    queryFn: () => apiRequest("GET", "/api/events/notifications"),
+    enabled: user?.role === "student",
+  });
+  const markEventNotificationRead = useMutation({
+    mutationFn: (id: string) => apiRequest("POST", `/api/events/notifications/${id}/read`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/events/notifications", user?.id] }),
+    onError: (error: Error) => toast({
+      title: "Could not mark event update as read",
+      description: error.message,
+      variant: "destructive",
+    }),
   });
   const { data: leaderboard, isLoading: leaderboardLoading, isError: leaderboardError } = useQuery<LeaderboardStatus>({
     queryKey: ["/api/dashboard", user?.id, "leaderboard"],
@@ -67,6 +95,7 @@ export function Navbar() {
     ? [...navItems, { href: "/admin", label: "Admin CMS", icon: LayoutDashboard }]
     : navItems;
   const activeTier = leaderboard?.tiers?.find((tier) => tier.id === leaderboard.tier);
+  const unreadEventNotifications = eventNotifications.filter((notification) => !notification.readAt).length;
   const showWhatsAppButton = ["/dashboard", "/courses", "/projects", "/profile"].includes(location)
     || location.startsWith("/course/")
     || location.startsWith("/quiz/");
@@ -123,19 +152,48 @@ export function Navbar() {
               <PopoverTrigger asChild>
                 <Button variant="ghost" size="icon" className="relative max-[380px]:h-9 max-[380px]:w-9 lg:hidden" aria-label="View announcements">
                   <Bell className="h-5 w-5" />
-                  {announcements.length > 0 && (
+                  {announcements.length + unreadEventNotifications > 0 && (
                     <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-destructive-foreground">
-                      {announcements.length > 9 ? "9+" : announcements.length}
+                      {announcements.length + unreadEventNotifications > 9 ? "9+" : announcements.length + unreadEventNotifications}
                     </span>
                   )}
                 </Button>
               </PopoverTrigger>
               <PopoverContent align="end" className="w-[min(22rem,calc(100vw-2rem))] p-0">
                 <div className="border-b p-4">
-                  <p className="font-semibold">Announcements</p>
-                  <p className="text-sm text-muted-foreground">Updates from your learning team</p>
+                  <p className="font-semibold">Notifications</p>
+                  <p className="text-sm text-muted-foreground">Announcements and event updates</p>
                 </div>
                 <div className="max-h-[min(65vh,28rem)] space-y-3 overflow-y-auto p-3">
+                  <h3 className="px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Event updates</h3>
+                  {user?.role === "student" && (eventNotificationsLoading ? (
+                    <p className="p-2 text-sm text-muted-foreground">Loading event updates...</p>
+                  ) : eventNotificationsError ? (
+                    <p role="alert" className="p-2 text-sm text-destructive">Event notifications could not be loaded. Please try again.</p>
+                  ) : eventNotifications.length === 0 ? (
+                    <p className="p-2 text-sm text-muted-foreground">No event updates yet.</p>
+                  ) : eventNotifications.map((notification) => (
+                    <button
+                      type="button"
+                      key={notification.id}
+                      className={`w-full rounded-md border p-3 text-left hover:bg-accent/50 ${notification.readAt ? "bg-muted/20" : "border-primary/40 bg-primary/5"}`}
+                      onClick={() => {
+                        if (!notification.readAt) markEventNotificationRead.mutate(notification.id);
+                        setLocation("/events");
+                      }}
+                    >
+                      <span className="flex items-start justify-between gap-3">
+                        <span className="text-sm font-medium">{notification.title}</span>
+                        {!notification.readAt && <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-primary" aria-label="Unread" />}
+                      </span>
+                      <span className="mt-1 block text-xs text-muted-foreground">
+                        {notification.status === "cancelled" ? "Event cancelled" : "New or updated event"}
+                        {" · "}{new Date(notification.createdAt).toLocaleDateString([], { month: "short", day: "numeric" })}
+                      </span>
+                    </button>
+                  )))}
+                  <div className="my-2 border-t" />
+                  <h3 className="px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Announcements</h3>
                   {announcementsLoading ? (
                     <p className="p-2 text-sm text-muted-foreground">Loading announcements...</p>
                   ) : announcementsError ? (

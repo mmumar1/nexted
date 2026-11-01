@@ -16,9 +16,10 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
 import { QuizMarkdownEditor } from "@/components/quiz/quiz-markdown";
 import type { AnnouncementRecord } from "@/lib/announcements";
-import type { Course, Module, QuizQuestion, User } from "@shared/schema";
+import type { Course, EventRecord, Module, QuizQuestion, User } from "@shared/schema";
 import { Archive, BarChart3, BookOpen, CalendarDays, ClipboardList, CreditCard, Download, FileQuestion, FileUp, LayoutDashboard, Pencil, Plus, RotateCcw, Send, Settings2, Trash2, UserRound, Users, X } from "lucide-react";
 import { isInitialEmptyQuizQuestion, parseQuizCsv, type QuizCsvPreview } from "@/lib/quiz-csv";
+import { formatDateTimeForZone, localDateTimeToUtc } from "@shared/event-utils";
 
 type Section = "overview" | "courses" | "modules" | "quizzes" | "events" | "cbt" | "users" | "enrollments" | "analytics" | "announcements" | "payments";
 
@@ -789,11 +790,7 @@ export default function AdminCms() {
           )}
 
           {section === "events" && (
-            <PlannedFeaturePanel
-              title="Events"
-              description="Create and publish events for students independently from course quizzes."
-              details="The event tools will include scheduling, course or student audience selection, publishing, calendar support, and notifications."
-            />
+            <EventManagementPanel userId={adminId} canManageAll={isSuperAdmin(user.role)} />
           )}
 
           {section === "cbt" && (
@@ -2013,6 +2010,212 @@ function AnnouncementPanel({
               ))}
             </Accordion>
           )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+interface EventDraft {
+  title: string;
+  description: string;
+  startsAt: string;
+  endsAt: string;
+  timezone: string;
+  location: string;
+  meetingUrl: string;
+}
+
+function createEmptyEventDraft(): EventDraft {
+  const now = new Date();
+  const startsAt = new Date(now.getTime() + 60 * 60 * 1000);
+  startsAt.setMinutes(0, 0, 0);
+  const endsAt = new Date(startsAt.getTime() + 60 * 60 * 1000);
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "Africa/Lagos";
+  return {
+    title: "",
+    description: "",
+    startsAt: formatDateTimeForZone(startsAt, timezone),
+    endsAt: formatDateTimeForZone(endsAt, timezone),
+    timezone,
+    location: "",
+    meetingUrl: "",
+  };
+}
+
+function EventManagementPanel({ userId, canManageAll }: { userId: string; canManageAll: boolean }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [draft, setDraft] = useState<EventDraft>(createEmptyEventDraft);
+  const [editingEventId, setEditingEventId] = useState<string | null>(null);
+  const eventsQuery = useQuery<EventRecord[]>({
+    queryKey: ["/api/admin/events", userId],
+    queryFn: () => apiRequest("GET", "/api/admin/events"),
+  });
+  const events = eventsQuery.data ?? [];
+  const resetDraft = () => {
+    setDraft(createEmptyEventDraft());
+    setEditingEventId(null);
+  };
+  const saveEvent = useMutation({
+    mutationFn: () => {
+      const payload = {
+        ...draft,
+        startsAt: localDateTimeToUtc(draft.startsAt, draft.timezone).toISOString(),
+        endsAt: localDateTimeToUtc(draft.endsAt, draft.timezone).toISOString(),
+      };
+      return apiRequest(
+        editingEventId ? "PATCH" : "POST",
+        editingEventId ? `/api/admin/events/${editingEventId}` : "/api/admin/events",
+        payload,
+      );
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["/api/admin/events", userId] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/events"] });
+      toast({ title: editingEventId ? "Event updated" : "Event saved as draft" });
+      resetDraft();
+    },
+    onError: (error: Error) => toast({ title: "Could not save event", description: error.message, variant: "destructive" }),
+  });
+  const updateEventStatus = useMutation({
+    mutationFn: ({ id, action }: { id: string; action: "publish" | "cancel" | "delete" }) =>
+      action === "delete"
+        ? apiRequest("DELETE", `/api/admin/events/${id}`)
+        : apiRequest("POST", `/api/admin/events/${id}/${action}`),
+    onSuccess: (_result, { action }) => {
+      void queryClient.invalidateQueries({ queryKey: ["/api/admin/events", userId] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/events"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/events/notifications"] });
+      toast({ title: { publish: "Event published", cancel: "Event cancelled", delete: "Draft deleted" }[action] });
+    },
+    onError: (error: Error) => toast({ title: "Could not update event", description: error.message, variant: "destructive" }),
+  });
+
+  const editEvent = (event: EventRecord) => {
+    setEditingEventId(event.id);
+    setDraft({
+      title: event.title,
+      description: event.description,
+      startsAt: formatDateTimeForZone(new Date(event.startsAt), event.timezone),
+      endsAt: formatDateTimeForZone(new Date(event.endsAt), event.timezone),
+      timezone: event.timezone,
+      location: event.location || "",
+      meetingUrl: event.meetingUrl || "",
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>{editingEventId ? "Edit event" : "Create an event"}</CardTitle>
+          <CardDescription>
+            Events are visible to all students. Saving creates a draft; publishing sends an in-app notification to students.
+            Updating a published event sends another notification.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form
+            className="space-y-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              saveEvent.mutate();
+            }}
+          >
+            <Field label="Event title">
+              <Input value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} maxLength={160} required />
+            </Field>
+            <Field label="Description">
+              <Textarea value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} rows={4} maxLength={10000} required />
+            </Field>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Start date and time">
+                <Input type="datetime-local" value={draft.startsAt} onChange={(event) => setDraft({ ...draft, startsAt: event.target.value })} required />
+              </Field>
+              <Field label="End date and time">
+                <Input type="datetime-local" value={draft.endsAt} onChange={(event) => setDraft({ ...draft, endsAt: event.target.value })} required />
+              </Field>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Timezone (IANA)">
+                <Input value={draft.timezone} onChange={(event) => setDraft({ ...draft, timezone: event.target.value })} placeholder="Africa/Lagos" maxLength={100} required />
+              </Field>
+              <Field label="Location (optional)">
+                <Input value={draft.location} onChange={(event) => setDraft({ ...draft, location: event.target.value })} maxLength={200} placeholder="Venue or online" />
+              </Field>
+            </div>
+            <Field label="Meeting link (optional, HTTPS)">
+              <Input type="url" value={draft.meetingUrl} onChange={(event) => setDraft({ ...draft, meetingUrl: event.target.value })} maxLength={500} placeholder="https://..." />
+            </Field>
+            <div className="flex flex-wrap gap-2">
+              <Button type="submit" disabled={saveEvent.isPending}>
+                {saveEvent.isPending ? "Saving..." : editingEventId ? "Save changes" : "Save as draft"}
+              </Button>
+              {editingEventId && <Button type="button" variant="outline" onClick={resetDraft}>Cancel edit</Button>}
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Events</CardTitle>
+          <CardDescription>{canManageAll ? "Manage all events created by staff." : "Manage events you created."}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {eventsQuery.isPending && <p className="text-sm text-muted-foreground">Loading events...</p>}
+          {eventsQuery.isError && <p role="alert" className="text-sm text-destructive">Events could not be loaded. Refresh to try again.</p>}
+          {!eventsQuery.isPending && !eventsQuery.isError && events.length === 0 && (
+            <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">No events have been created yet.</p>
+          )}
+          {events.map((event) => (
+            <article key={event.id} className="space-y-3 rounded-xl border p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="font-semibold">{event.title}</h3>
+                    <Badge variant={event.status === "published" ? "default" : event.status === "cancelled" ? "destructive" : "secondary"}>{event.status}</Badge>
+                  </div>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {new Date(event.startsAt).toLocaleString([], { dateStyle: "medium", timeStyle: "short", timeZone: event.timezone })}
+                    {" – "}
+                    {new Date(event.endsAt).toLocaleString([], { dateStyle: "short", timeStyle: "short", timeZone: event.timezone })}
+                    {" · "}{event.timezone}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">Created by {event.authorName} · {event.rsvpCount} attending</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {event.status !== "cancelled" && <Button type="button" size="sm" variant="outline" onClick={() => editEvent(event)}>Edit</Button>}
+                  {event.status === "draft" && (
+                    <>
+                      <Button type="button" size="sm" disabled={updateEventStatus.isPending} onClick={() => updateEventStatus.mutate({ id: event.id, action: "publish" })}>
+                        <Send className="mr-1 h-3.5 w-3.5" />Publish
+                      </Button>
+                      <Button type="button" size="sm" variant="ghost" disabled={updateEventStatus.isPending} onClick={() => updateEventStatus.mutate({ id: event.id, action: "delete" })}>
+                        <Trash2 className="mr-1 h-3.5 w-3.5" />Delete
+                      </Button>
+                    </>
+                  )}
+                  {event.status === "published" && (
+                    <Button type="button" size="sm" variant="destructive" disabled={updateEventStatus.isPending} onClick={() => {
+                      if (window.confirm(`Cancel "${event.title}"? Students will receive a cancellation notification.`)) {
+                        updateEventStatus.mutate({ id: event.id, action: "cancel" });
+                      }
+                    }}>Cancel event</Button>
+                  )}
+                </div>
+              </div>
+              <p className="whitespace-pre-wrap text-sm">{event.description}</p>
+              {(event.location || event.meetingUrl) && (
+                <p className="text-sm text-muted-foreground">
+                  {event.location}{event.location && event.meetingUrl ? " · " : ""}
+                  {event.meetingUrl && <a className="text-primary underline" href={event.meetingUrl} target="_blank" rel="noreferrer">Meeting link</a>}
+                </p>
+              )}
+            </article>
+          ))}
         </CardContent>
       </Card>
     </div>

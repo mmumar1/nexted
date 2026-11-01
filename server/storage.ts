@@ -19,6 +19,12 @@ import {
   type CbtQuestionCatalogEntry,
   type CbtAttempt,
   type InsertCbtAttempt,
+  type EventRecord,
+  type EventNotification,
+  type EventInput,
+  type EventFilters,
+  type EventRsvp,
+  type EventRsvpStatus,
   type Project,
   type InsertProject,
 } from "../shared/schema.js";
@@ -85,6 +91,17 @@ export interface IStorage {
   saveCbtAttemptAnswer(attemptId: string, userId: string, questionId: string, selectedOption: number | null): Promise<boolean>;
   finishCbtAttempt(id: string, data: Pick<CbtAttempt, "status" | "score" | "submittedAt">): Promise<CbtAttempt | undefined>;
 
+  // Events, RSVPs, and in-app notifications
+  getEventsForStaff(filters?: EventFilters): Promise<EventRecord[]>;
+  getEventsForStudent(studentId: string): Promise<EventRecord[]>;
+  getEvent(id: string, studentId?: string): Promise<EventRecord | undefined>;
+  createEvent(input: EventInput, authorId: string): Promise<EventRecord>;
+  updateEvent(id: string, data: Partial<EventInput> & { status?: "draft" | "published" | "cancelled"; revision?: number; publishedAt?: Date | null }): Promise<EventRecord | undefined>;
+  deleteEvent(id: string): Promise<boolean>;
+  setEventRsvp(eventId: string, studentId: string, status: EventRsvpStatus): Promise<EventRsvp>;
+  getEventNotifications(studentId: string): Promise<EventNotification[]>;
+  markEventNotificationRead(notificationId: string, studentId: string): Promise<boolean>;
+
   // Quiz Attempts
   getQuizAttempts(userId: string, quizId: string): Promise<QuizAttempt[]>;
   createQuizAttempt(attempt: InsertQuizAttempt): Promise<QuizAttempt>;
@@ -105,6 +122,10 @@ export class MemStorage implements IStorage {
   private quizzes: Map<string, Quiz>;
   private cbtQuestions: Map<string, CbtQuestion>;
   private cbtAttempts: Map<string, CbtAttempt>;
+  private events: Map<string, EventRecord>;
+  private eventRsvps: Map<string, EventRsvp>;
+  private eventNotifications: Map<string, EventNotification>;
+  private eventNotificationOwners: Map<string, string>;
   private quizAttempts: Map<string, QuizAttempt>;
   private projects: Map<string, Project>;
 
@@ -117,6 +138,10 @@ export class MemStorage implements IStorage {
     this.quizzes = new Map();
     this.cbtQuestions = new Map();
     this.cbtAttempts = new Map();
+    this.events = new Map();
+    this.eventRsvps = new Map();
+    this.eventNotifications = new Map();
+    this.eventNotificationOwners = new Map();
     this.quizAttempts = new Map();
     this.projects = new Map();
 
@@ -761,6 +786,141 @@ export class MemStorage implements IStorage {
     const updated = { ...attempt, ...data };
     this.cbtAttempts.set(id, updated);
     return updated;
+  }
+
+  private withEventRsvps(event: EventRecord, studentId?: string): EventRecord {
+    const rsvps = Array.from(this.eventRsvps.values()).filter((rsvp) => rsvp.eventId === event.id);
+    return {
+      ...event,
+      rsvpCount: rsvps.filter((rsvp) => rsvp.status === "attending").length,
+      rsvpStatus: rsvps.find((rsvp) => rsvp.studentId === studentId)?.status ?? null,
+    };
+  }
+
+  private notifyStudentsForEvent(event: EventRecord): void {
+    for (const student of Array.from(this.users.values()).filter((user) => user.role === "student")) {
+      const exists = Array.from(this.eventNotifications.values()).some(
+        (notification) =>
+          notification.eventId === event.id
+          && notification.revision === event.revision
+          && this.eventNotificationOwners.get(notification.id) === student.id,
+      );
+      if (exists) continue;
+      const notification: EventNotification = {
+        id: randomUUID(),
+        eventId: event.id,
+        revision: event.revision,
+        title: event.title,
+        startsAt: event.startsAt,
+        status: event.status,
+        createdAt: new Date(),
+        readAt: null,
+      };
+      this.eventNotifications.set(notification.id, notification);
+      this.eventNotificationOwners.set(notification.id, student.id);
+    }
+  }
+
+  async getEventsForStaff(filters: EventFilters = {}): Promise<EventRecord[]> {
+    return Array.from(this.events.values())
+      .filter((event) => !filters.authorId || event.authorId === filters.authorId)
+      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
+      .map((event) => this.withEventRsvps(event));
+  }
+
+  async getEventsForStudent(studentId: string): Promise<EventRecord[]> {
+    return Array.from(this.events.values())
+      .filter((event) => event.status === "published" || event.status === "cancelled")
+      .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime())
+      .map((event) => this.withEventRsvps(event, studentId));
+  }
+
+  async getEvent(id: string, studentId?: string): Promise<EventRecord | undefined> {
+    const event = this.events.get(id);
+    return event ? this.withEventRsvps(event, studentId) : undefined;
+  }
+
+  async createEvent(input: EventInput, authorId: string): Promise<EventRecord> {
+    const now = new Date();
+    const event: EventRecord = {
+      id: randomUUID(),
+      title: input.title,
+      description: input.description,
+      startsAt: input.startsAt,
+      endsAt: input.endsAt,
+      timezone: input.timezone,
+      location: input.location || null,
+      meetingUrl: input.meetingUrl || null,
+      status: "draft",
+      revision: 0,
+      authorId,
+      authorName: this.users.get(authorId)?.fullName || "Staff",
+      publishedAt: null,
+      createdAt: now,
+      updatedAt: now,
+      rsvpCount: 0,
+      rsvpStatus: null,
+    };
+    this.events.set(event.id, event);
+    return event;
+  }
+
+  async updateEvent(
+    id: string,
+    data: Partial<EventInput> & { status?: "draft" | "published" | "cancelled"; revision?: number; publishedAt?: Date | null },
+  ): Promise<EventRecord | undefined> {
+    const current = this.events.get(id);
+    if (!current) return undefined;
+    const updated: EventRecord = {
+      ...current,
+      ...data,
+      location: data.location === undefined ? current.location : data.location || null,
+      meetingUrl: data.meetingUrl === undefined ? current.meetingUrl : data.meetingUrl || null,
+      authorName: current.authorName,
+      rsvpCount: current.rsvpCount,
+      rsvpStatus: current.rsvpStatus,
+      updatedAt: new Date(),
+    };
+    this.events.set(id, updated);
+    if (
+      (updated.status === "published" && (current.status !== "published" || updated.revision > current.revision))
+      || (updated.status === "cancelled" && current.status === "published")
+    ) this.notifyStudentsForEvent(updated);
+    return updated;
+  }
+
+  async deleteEvent(id: string): Promise<boolean> {
+    if (this.events.get(id)?.status !== "draft") return false;
+    this.events.delete(id);
+    for (const [key, rsvp] of Array.from(this.eventRsvps.entries())) {
+      if (rsvp.eventId === id) this.eventRsvps.delete(key);
+    }
+    for (const [key, notification] of Array.from(this.eventNotifications.entries())) {
+      if (notification.eventId === id) this.eventNotifications.delete(key);
+    }
+    return true;
+  }
+
+  async setEventRsvp(eventId: string, studentId: string, status: EventRsvpStatus): Promise<EventRsvp> {
+    const key = `${eventId}:${studentId}`;
+    const rsvp: EventRsvp = { eventId, studentId, status, updatedAt: new Date() };
+    this.eventRsvps.set(key, rsvp);
+    return rsvp;
+  }
+
+  async getEventNotifications(studentId: string): Promise<EventNotification[]> {
+    return Array.from(this.eventNotifications.entries())
+      .filter(([id]) => this.eventNotificationOwners.get(id) === studentId)
+      .map(([, notification]) => notification)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, 30);
+  }
+
+  async markEventNotificationRead(notificationId: string, studentId: string): Promise<boolean> {
+    const notification = this.eventNotifications.get(notificationId);
+    if (!notification || this.eventNotificationOwners.get(notificationId) !== studentId || notification.readAt) return false;
+    this.eventNotifications.set(notificationId, { ...notification, readAt: new Date() });
+    return true;
   }
 
   // Quiz Attempts

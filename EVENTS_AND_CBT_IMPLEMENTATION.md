@@ -1,46 +1,46 @@
 # Events and CBT Implementation Specification
 
-This document captures the planned Events and JAMB-style CBT features. Student-menu navigation and placeholder pages are in place. The teacher/admin CBT question-authoring slice and student CBT test flow are implemented; event management, notifications, and calendar integration are not implemented.
+This document records the Events and JAMB-style CBT features and their implementation status. Staff event management, student event listings and RSVPs, in-app event notifications, and calendar exports are implemented. The CBT question-authoring slice and student CBT test flow are also implemented.
 
 ## Current implementation status
 
 - **CBT authoring (complete):** Staff can create questions manually or import a CSV (up to 200 questions per import), filter and edit their question bank, publish drafts, and archive or restore questions. Instructors manage their own questions; admins can manage all questions. Editing a published question returns it to draft for review.
 - **Student CBT flow (implemented):** Students can select published questions by subject and year, create self-tests or standard mocks, resume one active attempt, navigate and answer with automatic server persistence, submit or time out, and review scores, answers, explanations, and pace. Question snapshots, timing, scoring, ownership, and answer-key reveal are enforced server-side. Attempt creation is limited to 10 per minute per student.
-- **Events (not implemented):** The Events entry points remain placeholders.
+- **Events (implemented):** Staff can create drafts, publish, edit, cancel, and delete draft events. Students can see published and cancelled events, RSVP, download ICS calendar files, and open Google Calendar templates. Publishing, updating, and cancelling generate per-student in-app notifications.
 
 ## Navigation delivered now
 
 - Add **Events** and **CBT practice** to the authenticated navigation menu.
-- `/events` and `/cbt` open clear placeholder pages rather than 404s.
+- `/events` provides the student event experience; `/cbt` provides student CBT practice.
 - Keep these actions separate from Profile & settings and from the existing course quiz experience.
 - Admin CMS provides separate **Events** and **CBT question bank** sections on desktop navigation and the mobile section selector.
-- The Events section remains a placeholder; the CBT section supports staff question authoring and management as described above.
+- The Events section supports staff event authoring and management; the CBT section supports staff question authoring and management as described above.
 - Preserve the existing course quiz builder and its workflow; CBT question authoring must be implemented separately.
 
 ## Events
 
 ### Student experience
 
-- Provide an Events page showing upcoming events, with useful event details such as title, description, start/end date and time, timezone, organizer/teacher, and relevant course or audience.
-- Clearly distinguish upcoming, in-progress, and past events; do not show unpublished or unauthorized events.
-- Let students add an event to their calendar. Support a downloadable calendar file (for example, ICS) and/or a calendar subscription/integration after deciding which calendar providers to support.
-- Provide notifications when a teacher creates or changes an event. Define delivery channels (in-app, email, push, or a combination), opt-out behavior, and how reminders are scheduled.
-- Notify only the students targeted by the event, and avoid duplicate notifications when event data is retried or edited.
+- The Events page shows upcoming, in-progress, and past events, with title, description, dates, timezone, organizer, location/meeting link, and RSVP counts. Draft events are not visible to students; cancelled events remain visible as cancellations.
+- Events are global to all students. Students can RSVP or change their RSVP until the event starts.
+- Students can download an ICS calendar file or open a Google Calendar template.
+- Publishing, updating a published event, or cancelling it creates an idempotent in-app notification for each student. Notifications are surfaced in the navbar bell; email, push, and scheduled reminders are out of scope.
 
 ### Teacher experience
 
-- Give authorized teachers an event creation flow separate from quizzes.
-- Capture title, description, start/end time, timezone, audience/course, and optional location or online meeting link.
-- Support editing, cancellation/deletion, and publication state.
-- Validate date ranges and require an explicit timezone so displayed times and calendar entries remain consistent.
+- Give authorized instructors and administrators an event creation flow separate from quizzes.
+- Capture title, description, start/end time, explicit IANA timezone, and optional location or HTTPS meeting link.
+- Support editing and publishing drafts; published events can be updated or cancelled, while only drafts can be deleted.
+- Validate date ranges and timezone on the server.
 - On publish/update/cancel, notify the correct audience and keep calendar data current.
 
 ### Access, privacy, and reliability
 
-- Enforce teacher permissions server-side: teachers may manage events only for courses/audiences they are authorized to teach; administrators may manage all events.
-- Enforce student visibility server-side, not only by hiding UI.
+- Enforce event permissions server-side: instructors manage their own events; administrators can manage all events.
+- Enforce student visibility server-side, not only by hiding UI. Only published or cancelled events are returned to students.
 - Store event timestamps consistently (UTC plus an explicit timezone where needed).
-- Make notification and calendar generation idempotent; surface delivery failures and provide retry/observability rather than silently losing notifications.
+- The migration `supabase/events-notifications-migration.sql` is required for existing Supabase projects. New projects receive the schema from `schema.sql`.
+- Notifications use a unique event/student/revision key to prevent duplicates. Notification read state is stored per student.
 
 ## CBT practice
 
@@ -84,30 +84,18 @@ CBT means a separate computer-based test system for JAMB-standard mock preparati
 - Rate-limit attempt creation/submission and record audit history for teacher edits and test completion.
 - Make submission idempotent and handle network retries without duplicate results.
 
-## Decisions to confirm before full implementation
+## Confirmed product decisions
 
-- Which calendar destinations are required: downloadable ICS, Google Calendar, Outlook, device calendar, or calendar subscription?
-Answer: Google calender or any free suitable option.
-- Which notification channels are in scope, and what reminder schedule should apply?
-Answer; Use the in App notification icon to display all the notificatios.
-- Are Events visible to every student or only course/enrollment-specific audiences? Can students RSVP?
-Answer: Events are visible to all student's and student's can RSVP.
-- What is the CBT duration for English, each other subject, and multi-subject combined tests?
-Answer: for the self test, students can choose their own duration from a dropdown
-- Is the 40-question count required independently for every selected non-English subject?
-Answer: the student should be allowed to select the numbers of questions they want for a self test but for a mock test it should be the standard 40 or 60 questions.
-- What are the scoring, negative-marking, question-randomization, answer-review, and retake policies?
-- How will teachers supply questions initially (manual entry, CSV import, or both), and who reviews/publishes them?
-Answers: Questions should be uploaded in using a combination of manual and import. the instructor reviews and publish.
-- Should CBT content be organized by year only, or also by exam session/version?
-Answer: Candidate can select which year of question they want to access, this means when an instructor create a questions bank of rEnglish e.t.c they can add which year the question belongs to, the student can go ahead and add more subjects and selecting the year they want to attemmpt.
+- Events are visible to all students. Students can RSVP; in-app notifications appear in the navbar. Calendar options are ICS download and Google Calendar. Email, push, and scheduled reminders are out of scope.
+- Self-test durations are 15, 30, 45, 60, 90, or 120 minutes. Standard mocks are 120 minutes, with 60 English questions and 40 per other subject. Self-tests allow students to choose subjects and question counts.
+- CBT scoring is one point per correct answer with no wrong-answer penalty. Questions and options are shuffled; students can review answers and pace after submission and retake without a limit.
+- Instructors can author questions manually or import them and are responsible for reviewing and publishing. Questions are tagged by subject and year so students can select the material they want to attempt.
 
 ## Suggested implementation sequence
 
-1. Confirm the outstanding product decisions above and the required roles.
-2. Design the database schema, row-level authorization, and server APIs for events, notifications, CBT question banks, and attempts.
-3. Implement the teacher event authoring and event publication lifecycle.
-4. Implement student event listing, calendar export/sync, and notification delivery.
-5. **Complete:** Implement the teacher CBT question-bank editor and publishing workflow.
-6. **Complete:** Implement subject/year selection, timed self-tests and mocks, navigation, answer persistence, submission, scoring, and review.
-7. **In progress:** Focused shuffle, scoring, and answer-key privacy tests pass. Add endpoint-level authorization, expiry, retry/idempotency, and end-to-end tests before expanding CBT policies or question formats.
+1. **Complete:** Design and implement event storage, migration, server authorization, and APIs.
+2. **Complete:** Implement staff event authoring and publication lifecycle.
+3. **Complete:** Implement student event listing, RSVP, calendar export, and in-app notification delivery.
+4. **Complete:** Implement the teacher CBT question-bank editor and publishing workflow.
+5. **Complete:** Implement subject/year selection, timed self-tests and mocks, navigation, answer persistence, submission, scoring, and review.
+6. **In progress:** Focused shuffle, scoring, calendar, and answer-key privacy tests pass. Add endpoint-level authorization, expiry, retry/idempotency, and end-to-end tests before expanding CBT policies or question formats.

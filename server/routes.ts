@@ -18,6 +18,7 @@ import {
   type CbtAttempt,
   type CbtAttemptSelection,
   type CbtQuestion,
+  type EventInput,
   type Module,
   type QuizQuestion,
 } from "../shared/schema.js";
@@ -25,6 +26,7 @@ import { z } from "zod";
 import { createSupabaseAdminClient, createSupabaseAuthClient } from "./supabase-admin.js";
 import { compareModuleOrder } from "../shared/module-utils.js";
 import { normalizeQuizQuestionIndex } from "../shared/quiz-utils.js";
+import { isValidTimeZone } from "../shared/event-utils.js";
 import {
   scoreCbtAttempt,
   sampleCbtQuestions,
@@ -382,6 +384,231 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
       res.status(500).json({ error: "Failed to create announcement" });
+    }
+  });
+
+  const eventInputSchema = z.object({
+    title: z.string().trim().min(1).max(160),
+    description: z.string().trim().min(1).max(10000),
+    startsAt: z.string().datetime({ offset: true }).transform((value) => new Date(value)),
+    endsAt: z.string().datetime({ offset: true }).transform((value) => new Date(value)),
+    timezone: z.string().trim().min(1).max(100),
+    location: z.string().trim().max(200).optional().default(""),
+    meetingUrl: z.union([z.literal(""), z.string().url().max(500)]).optional().default(""),
+  }).superRefine((input, context) => {
+    if (input.endsAt <= input.startsAt) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["endsAt"],
+        message: "Event end time must be after its start time.",
+      });
+    }
+    if (!isValidTimeZone(input.timezone)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["timezone"],
+        message: "Choose a valid IANA timezone.",
+      });
+    }
+    if (input.meetingUrl && new URL(input.meetingUrl).protocol !== "https:") {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["meetingUrl"],
+        message: "Meeting links must use HTTPS.",
+      });
+    }
+  });
+
+  const getEventForStaffOrRespond = async (
+    id: string,
+    requester: { id: string; role: string },
+    res: Response,
+  ) => {
+    const event = await storage.getEvent(id);
+    if (!event) {
+      res.status(404).json({ error: "Event not found" });
+      return undefined;
+    }
+    if (!isSuperAdmin(requester.role) && event.authorId !== requester.id) {
+      res.status(403).json({ error: "You can only manage events you created." });
+      return undefined;
+    }
+    return event;
+  };
+
+  app.get("/api/admin/events", async (req, res) => {
+    try {
+      const requester = await requireAuthenticatedStaff(req, res);
+      if (!requester) return;
+      const events = await storage.getEventsForStaff(
+        isSuperAdmin(requester.role) ? {} : { authorId: requester.id },
+      );
+      res.json(events);
+    } catch (error) {
+      console.error("Failed to fetch staff events:", error);
+      res.status(500).json({ error: "Failed to fetch events" });
+    }
+  });
+
+  app.post("/api/admin/events", async (req, res) => {
+    try {
+      const requester = await requireAuthenticatedStaff(req, res);
+      if (!requester) return;
+      const input: EventInput = eventInputSchema.parse(req.body);
+      res.status(201).json(await storage.createEvent(input, requester.id));
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
+      console.error("Failed to create event:", error);
+      res.status(500).json({ error: "Failed to create event" });
+    }
+  });
+
+  app.patch("/api/admin/events/:id", async (req, res) => {
+    try {
+      const requester = await requireAuthenticatedStaff(req, res);
+      if (!requester) return;
+      const id = z.string().uuid().parse(req.params.id);
+      const event = await getEventForStaffOrRespond(id, requester, res);
+      if (!event) return;
+      if (event.status === "cancelled") return res.status(409).json({ error: "Cancelled events cannot be edited." });
+      const input: EventInput = eventInputSchema.parse(req.body);
+      const changed = input.title !== event.title
+        || input.description !== event.description
+        || input.startsAt.getTime() !== event.startsAt.getTime()
+        || input.endsAt.getTime() !== event.endsAt.getTime()
+        || input.timezone !== event.timezone
+        || (input.location || "") !== (event.location || "")
+        || (input.meetingUrl || "") !== (event.meetingUrl || "");
+      if (!changed) return res.json(event);
+
+      const updated = await storage.updateEvent(id, {
+        ...input,
+        ...(event.status === "published" ? { revision: event.revision + 1 } : {}),
+      });
+      if (!updated) return res.status(404).json({ error: "Event not found" });
+      res.json(updated);
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
+      console.error("Failed to update event:", error);
+      res.status(500).json({ error: "Failed to update event" });
+    }
+  });
+
+  app.post("/api/admin/events/:id/publish", async (req, res) => {
+    try {
+      const requester = await requireAuthenticatedStaff(req, res);
+      if (!requester) return;
+      const id = z.string().uuid().parse(req.params.id);
+      const event = await getEventForStaffOrRespond(id, requester, res);
+      if (!event) return;
+      if (event.status !== "draft") return res.status(409).json({ error: "Only draft events can be published." });
+      const updated = await storage.updateEvent(id, {
+        status: "published",
+        revision: event.revision + 1,
+        publishedAt: new Date(),
+      });
+      if (!updated) return res.status(404).json({ error: "Event not found" });
+      res.json(updated);
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
+      console.error("Failed to publish event:", error);
+      res.status(500).json({ error: "Failed to publish event" });
+    }
+  });
+
+  app.post("/api/admin/events/:id/cancel", async (req, res) => {
+    try {
+      const requester = await requireAuthenticatedStaff(req, res);
+      if (!requester) return;
+      const id = z.string().uuid().parse(req.params.id);
+      const event = await getEventForStaffOrRespond(id, requester, res);
+      if (!event) return;
+      if (event.status !== "published") return res.status(409).json({ error: "Only published events can be cancelled." });
+      const updated = await storage.updateEvent(id, {
+        status: "cancelled",
+        revision: event.revision + 1,
+      });
+      if (!updated) return res.status(404).json({ error: "Event not found" });
+      res.json(updated);
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
+      console.error("Failed to cancel event:", error);
+      res.status(500).json({ error: "Failed to cancel event" });
+    }
+  });
+
+  app.delete("/api/admin/events/:id", async (req, res) => {
+    try {
+      const requester = await requireAuthenticatedStaff(req, res);
+      if (!requester) return;
+      const id = z.string().uuid().parse(req.params.id);
+      const event = await getEventForStaffOrRespond(id, requester, res);
+      if (!event) return;
+      if (event.status !== "draft") return res.status(409).json({ error: "Only draft events can be deleted." });
+      res.json({ deleted: await storage.deleteEvent(id) });
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
+      console.error("Failed to delete event:", error);
+      res.status(500).json({ error: "Failed to delete event" });
+    }
+  });
+
+  app.get("/api/events", async (req, res) => {
+    try {
+      const student = await requireAuthenticatedStudent(req, res);
+      if (!student) return;
+      res.json(await storage.getEventsForStudent(student.id));
+    } catch (error) {
+      console.error("Failed to fetch student events:", error);
+      res.status(500).json({ error: "Failed to fetch events" });
+    }
+  });
+
+  app.post("/api/events/:id/rsvp", async (req, res) => {
+    try {
+      const student = await requireAuthenticatedStudent(req, res);
+      if (!student) return;
+      const id = z.string().uuid().parse(req.params.id);
+      const { status } = z.object({
+        status: z.enum(["attending", "not_attending"]),
+      }).parse(req.body);
+      const event = await storage.getEvent(id, student.id);
+      if (!event || (event.status !== "published" && event.status !== "cancelled")) {
+        return res.status(404).json({ error: "Event not found" });
+      }
+      if (event.status !== "published") return res.status(409).json({ error: "This event has been cancelled." });
+      if (event.startsAt.getTime() <= Date.now()) return res.status(409).json({ error: "RSVP is closed after an event starts." });
+      res.json(await storage.setEventRsvp(id, student.id, status));
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
+      console.error("Failed to update event RSVP:", error);
+      res.status(500).json({ error: "Failed to update RSVP" });
+    }
+  });
+
+  app.get("/api/events/notifications", async (req, res) => {
+    try {
+      const student = await requireAuthenticatedStudent(req, res);
+      if (!student) return;
+      res.json(await storage.getEventNotifications(student.id));
+    } catch (error) {
+      console.error("Failed to fetch event notifications:", error);
+      res.status(500).json({ error: "Failed to fetch event notifications" });
+    }
+  });
+
+  app.post("/api/events/notifications/:id/read", async (req, res) => {
+    try {
+      const student = await requireAuthenticatedStudent(req, res);
+      if (!student) return;
+      const id = z.string().uuid().parse(req.params.id);
+      const updated = await storage.markEventNotificationRead(id, student.id);
+      if (!updated) return res.status(404).json({ error: "Notification not found or already read." });
+      res.json({ read: true });
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
+      console.error("Failed to mark event notification read:", error);
+      res.status(500).json({ error: "Failed to update notification" });
     }
   });
 

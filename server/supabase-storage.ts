@@ -8,6 +8,12 @@ import type {
   CbtQuestionFilters,
   CbtQuestionCatalogEntry,
   CbtAttempt,
+  EventRecord,
+  EventNotification,
+  EventInput,
+  EventFilters,
+  EventRsvp,
+  EventRsvpStatus,
   InsertCbtAttempt,
   InsertCbtQuestion,
   InsertCourse,
@@ -31,6 +37,7 @@ import type {
 dotenv.config({ path: ".env.local" });
 
 type DatabaseRow = Record<string, any>;
+const eventSelect = "*, profiles!events_author_id_fkey(full_name), event_rsvps(student_id,status)";
 
 function required<T>(data: T | null, error: { message?: string } | null): T | undefined {
   if (error) throw new Error(error.message || "Supabase request failed");
@@ -147,6 +154,30 @@ function mapCbtAttempt(row: DatabaseRow, answers: Record<string, number> = {}): 
     expiresAt: new Date(row.expires_at),
     submittedAt: row.submitted_at ? new Date(row.submitted_at) : null,
     createdAt: new Date(row.created_at),
+  };
+}
+
+function mapEvent(row: DatabaseRow, studentId?: string): EventRecord {
+  const author = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles;
+  const rsvps = Array.isArray(row.event_rsvps) ? row.event_rsvps : [];
+  return {
+    id: row.id,
+    title: row.title,
+    description: row.description,
+    startsAt: new Date(row.starts_at),
+    endsAt: new Date(row.ends_at),
+    timezone: row.timezone,
+    location: row.location,
+    meetingUrl: row.meeting_url,
+    status: row.status,
+    revision: row.revision,
+    authorId: row.author_id,
+    authorName: author?.full_name || "Staff",
+    publishedAt: row.published_at ? new Date(row.published_at) : null,
+    createdAt: new Date(row.created_at),
+    updatedAt: new Date(row.updated_at),
+    rsvpCount: rsvps.filter((rsvp: DatabaseRow) => rsvp.status === "attending").length,
+    rsvpStatus: rsvps.find((rsvp: DatabaseRow) => rsvp.student_id === studentId)?.status ?? null,
   };
 }
 
@@ -646,6 +677,131 @@ export class SupabaseStorage implements IStorage {
       .maybeSingle();
     if (error) throw new Error(error.message);
     return data ? this.getCbtAttempt(id) : undefined;
+  }
+
+  async getEventsForStaff(filters: EventFilters = {}): Promise<EventRecord[]> {
+    let query = this.client.from("events").select(eventSelect).order("updated_at", { ascending: false });
+    if (filters.authorId) query = query.eq("author_id", filters.authorId);
+    const { data, error } = await query;
+    return (required(data, error) ?? []).map((row) => mapEvent(row));
+  }
+
+  async getEventsForStudent(studentId: string): Promise<EventRecord[]> {
+    const { data, error } = await this.client
+      .from("events")
+      .select(eventSelect)
+      .in("status", ["published", "cancelled"])
+      .order("starts_at", { ascending: true });
+    return (required(data, error) ?? []).map((row) => mapEvent(row, studentId));
+  }
+
+  async getEvent(id: string, studentId?: string): Promise<EventRecord | undefined> {
+    const { data, error } = await this.client.from("events").select(eventSelect).eq("id", id).maybeSingle();
+    return data ? mapEvent(required(data, error)!, studentId) : undefined;
+  }
+
+  async createEvent(input: EventInput, authorId: string): Promise<EventRecord> {
+    const { data, error } = await this.client.from("events").insert({
+      title: input.title,
+      description: input.description,
+      starts_at: input.startsAt.toISOString(),
+      ends_at: input.endsAt.toISOString(),
+      timezone: input.timezone,
+      location: input.location || null,
+      meeting_url: input.meetingUrl || null,
+      status: "draft",
+      revision: 0,
+      author_id: authorId,
+    }).select(eventSelect).single();
+    return mapEvent(required(data, error)!);
+  }
+
+  async updateEvent(
+    id: string,
+    update: Partial<EventInput> & { status?: "draft" | "published" | "cancelled"; revision?: number; publishedAt?: Date | null },
+  ): Promise<EventRecord | undefined> {
+    const payload: DatabaseRow = { updated_at: new Date().toISOString() };
+    const fields: Array<[keyof EventInput, string]> = [
+      ["title", "title"], ["description", "description"], ["startsAt", "starts_at"],
+      ["endsAt", "ends_at"], ["timezone", "timezone"], ["location", "location"],
+      ["meetingUrl", "meeting_url"],
+    ];
+    for (const [source, target] of fields) {
+      if (update[source] !== undefined) {
+        const value = update[source];
+        payload[target] = value instanceof Date ? value.toISOString() : value || null;
+      }
+    }
+    if (update.status !== undefined) payload.status = update.status;
+    if (update.revision !== undefined) payload.revision = update.revision;
+    if (update.publishedAt !== undefined) payload.published_at = update.publishedAt?.toISOString() ?? null;
+    const { data, error } = await this.client.from("events").update(payload).eq("id", id).select(eventSelect).maybeSingle();
+    if (error) throw new Error(error.message);
+    return data ? mapEvent(data) : undefined;
+  }
+
+  async deleteEvent(id: string): Promise<boolean> {
+    const { data, error } = await this.client
+      .from("events")
+      .delete()
+      .eq("id", id)
+      .eq("status", "draft")
+      .select("id")
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    return !!data;
+  }
+
+  async setEventRsvp(eventId: string, studentId: string, status: EventRsvpStatus): Promise<EventRsvp> {
+    const { data, error } = await this.client.from("event_rsvps").upsert({
+      event_id: eventId,
+      student_id: studentId,
+      status,
+      updated_at: new Date().toISOString(),
+    }).select("*").single();
+    if (error) throw new Error(error.message);
+    return {
+      eventId: data.event_id,
+      studentId: data.student_id,
+      status: data.status,
+      updatedAt: new Date(data.updated_at),
+    };
+  }
+
+  async getEventNotifications(studentId: string): Promise<EventNotification[]> {
+    const { data, error } = await this.client
+      .from("event_notifications")
+      .select("id, event_id, revision, created_at, read_at, events!event_notifications_event_id_fkey(title, starts_at, status)")
+      .eq("student_id", studentId)
+      .order("created_at", { ascending: false })
+      .limit(30);
+    return (required(data, error) ?? []).map((row) => {
+      const event = Array.isArray(row.events) ? row.events[0] : row.events;
+      if (!event) throw new Error("Event notification has no associated event");
+      return {
+        id: row.id,
+        eventId: row.event_id,
+        revision: row.revision,
+        title: event.title,
+        startsAt: new Date(event.starts_at),
+        status: event.status,
+        createdAt: new Date(row.created_at),
+        readAt: row.read_at ? new Date(row.read_at) : null,
+      };
+    });
+  }
+
+  async markEventNotificationRead(notificationId: string, studentId: string): Promise<boolean> {
+    const { data, error } = await this.client
+      .from("event_notifications")
+      .update({ read_at: new Date().toISOString() })
+      .eq("id", notificationId)
+      .eq("student_id", studentId)
+      .is("read_at", null)
+      .select("id")
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    return !!data;
   }
 
   async getQuizAttempts(userId: string, quizId: string) {

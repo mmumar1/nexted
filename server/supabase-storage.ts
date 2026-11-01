@@ -4,6 +4,12 @@ import { createSupabaseAdminClient } from "./supabase-admin.js";
 import type { IStorage } from "./storage.js";
 import type {
   Course,
+  CbtQuestion,
+  CbtQuestionFilters,
+  CbtQuestionCatalogEntry,
+  CbtAttempt,
+  InsertCbtAttempt,
+  InsertCbtQuestion,
   InsertCourse,
   InsertModule,
   InsertModuleCompletion,
@@ -95,6 +101,52 @@ function mapQuiz(row: DatabaseRow): Quiz {
     title: row.title,
     questions: JSON.stringify(row.questions ?? []),
     passScore: row.pass_score,
+  };
+}
+
+function mapCbtQuestion(row: DatabaseRow): CbtQuestion {
+  if (!Array.isArray(row.options) || !row.options.every((option: unknown) => typeof option === "string")) {
+    throw new Error("CBT question has invalid options data");
+  }
+  return {
+    id: row.id,
+    subject: row.subject,
+    examYear: row.exam_year,
+    question: row.question,
+    questionImageUrl: row.question_image_url,
+    options: row.options,
+    correctAnswer: row.correct_answer,
+    explanation: row.explanation,
+    explanationImageUrl: row.explanation_image_url,
+    status: row.status,
+    createdBy: row.created_by,
+    updatedBy: row.updated_by,
+    publishedBy: row.published_by,
+    publishedAt: row.published_at ? new Date(row.published_at) : null,
+    archivedAt: row.archived_at ? new Date(row.archived_at) : null,
+    createdAt: new Date(row.created_at),
+    updatedAt: new Date(row.updated_at),
+  };
+}
+
+function mapCbtAttempt(row: DatabaseRow, answers: Record<string, number> = {}): CbtAttempt {
+  if (!Array.isArray(row.selections) || !Array.isArray(row.question_snapshot)) {
+    throw new Error("CBT attempt has invalid snapshot data");
+  }
+  return {
+    id: row.id,
+    userId: row.user_id,
+    mode: row.mode,
+    selections: row.selections,
+    durationMinutes: row.duration_minutes,
+    questions: row.question_snapshot,
+    answers,
+    status: row.status,
+    score: row.score,
+    startedAt: new Date(row.started_at),
+    expiresAt: new Date(row.expires_at),
+    submittedAt: row.submitted_at ? new Date(row.submitted_at) : null,
+    createdAt: new Date(row.created_at),
   };
 }
 
@@ -395,6 +447,205 @@ export class SupabaseStorage implements IStorage {
     const { error } = await this.client.from("quizzes").delete().eq("id", id);
     if (error) throw new Error(error.message);
     return true;
+  }
+
+  async getCbtQuestions(filters: CbtQuestionFilters = {}) {
+    let query = this.client.from("cbt_questions").select("*").order("updated_at", { ascending: false }).limit(500);
+    if (filters.subject) query = query.ilike("subject", filters.subject);
+    if (filters.examYear !== undefined) query = query.eq("exam_year", filters.examYear);
+    if (filters.status) query = query.eq("status", filters.status);
+    if (filters.createdBy) query = query.eq("created_by", filters.createdBy);
+    const { data, error } = await query;
+    return (required(data, error) ?? []).map(mapCbtQuestion);
+  }
+
+  async getCbtQuestion(id: string) {
+    const { data, error } = await this.client.from("cbt_questions").select("*").eq("id", id).maybeSingle();
+    return data ? mapCbtQuestion(required(data, error)!) : undefined;
+  }
+
+  async createCbtQuestions(questions: InsertCbtQuestion[]) {
+    if (!questions.length) return [];
+    const { data, error } = await this.client.from("cbt_questions").insert(questions.map((question) => ({
+      subject: question.subject,
+      exam_year: question.examYear,
+      question: question.question,
+      question_image_url: question.questionImageUrl ?? null,
+      options: question.options,
+      correct_answer: question.correctAnswer,
+      explanation: question.explanation || null,
+      explanation_image_url: question.explanationImageUrl ?? null,
+      status: "draft",
+      created_by: question.createdBy,
+      updated_by: question.createdBy,
+    }))).select("*");
+    return (required(data, error) ?? []).map(mapCbtQuestion);
+  }
+
+  async updateCbtQuestion(id: string, update: Partial<CbtQuestion>) {
+    const payload: DatabaseRow = {};
+    const fields: Array<[keyof CbtQuestion, string]> = [
+      ["subject", "subject"], ["examYear", "exam_year"], ["question", "question"],
+      ["questionImageUrl", "question_image_url"], ["options", "options"],
+      ["correctAnswer", "correct_answer"], ["explanation", "explanation"],
+      ["explanationImageUrl", "explanation_image_url"], ["status", "status"],
+      ["updatedBy", "updated_by"], ["publishedBy", "published_by"],
+      ["publishedAt", "published_at"], ["archivedAt", "archived_at"],
+    ];
+    for (const [source, target] of fields) {
+      if (update[source] !== undefined) {
+        const value = update[source];
+        payload[target] = value instanceof Date ? value.toISOString() : value;
+      }
+    }
+    payload.updated_at = new Date().toISOString();
+    const { data, error } = await this.client.from("cbt_questions").update(payload).eq("id", id).select("*").maybeSingle();
+    return data ? mapCbtQuestion(required(data, error)!) : undefined;
+  }
+
+  async getCbtQuestionCatalog(): Promise<CbtQuestionCatalogEntry[]> {
+    const grouped = new Map<string, CbtQuestionCatalogEntry>();
+    const pageSize = 1000;
+    for (let offset = 0; ; offset += pageSize) {
+      const { data, error } = await this.client
+        .from("cbt_questions")
+        .select("subject, exam_year")
+        .eq("status", "published")
+        .order("subject")
+        .order("exam_year")
+        .order("id")
+        .range(offset, offset + pageSize - 1);
+      const rows = required(data, error) ?? [];
+      for (const row of rows) {
+        const key = `${String(row.subject).toLowerCase()}\u0000${row.exam_year}`;
+        const existing = grouped.get(key);
+        if (existing) existing.count += 1;
+        else grouped.set(key, { subject: row.subject, examYear: row.exam_year, count: 1 });
+      }
+      if (rows.length < pageSize) break;
+    }
+    return Array.from(grouped.values()).sort((a, b) =>
+      a.subject.localeCompare(b.subject) || b.examYear - a.examYear,
+    );
+  }
+
+  async createCbtAttempt(attempt: InsertCbtAttempt): Promise<CbtAttempt> {
+    const { data, error } = await this.client.from("cbt_attempts").insert({
+      user_id: attempt.userId,
+      mode: attempt.mode,
+      selections: attempt.selections,
+      duration_minutes: attempt.durationMinutes,
+      question_snapshot: attempt.questions,
+      status: attempt.status,
+      started_at: attempt.startedAt.toISOString(),
+      expires_at: attempt.expiresAt.toISOString(),
+    }).select("*").single();
+    return mapCbtAttempt(required(data, error)!);
+  }
+
+  async countCbtAttemptsSince(userId: string, since: Date): Promise<number> {
+    const { count, error } = await this.client
+      .from("cbt_attempts")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .gte("created_at", since.toISOString());
+    if (error) throw new Error(error.message);
+    return count ?? 0;
+  }
+
+  async getCbtAttempt(id: string): Promise<CbtAttempt | undefined> {
+    const { data, error } = await this.client.from("cbt_attempts").select("*").eq("id", id).maybeSingle();
+    const row = required(data, error);
+    if (!row) return undefined;
+    const { data: answerRows, error: answersError } = await this.client
+      .from("cbt_attempt_answers")
+      .select("question_id, selected_option")
+      .eq("attempt_id", id);
+    const answers: Record<string, number> = {};
+    for (const answer of required(answerRows, answersError) ?? []) {
+      answers[answer.question_id] = answer.selected_option;
+    }
+    return mapCbtAttempt(row, answers);
+  }
+
+  async getActiveCbtAttempt(userId: string): Promise<CbtAttempt | undefined> {
+    const { data, error } = await this.client
+      .from("cbt_attempts")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("status", "in_progress")
+      .maybeSingle();
+    const row = required(data, error);
+    return row ? this.getCbtAttempt(row.id) : undefined;
+  }
+
+  async getCbtAttemptsForUser(userId: string): Promise<CbtAttempt[]> {
+    const { data, error } = await this.client
+      .from("cbt_attempts")
+      .select("*")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(20);
+    return (required(data, error) ?? []).map((row) => mapCbtAttempt(row));
+  }
+
+  async saveCbtAttemptAnswer(
+    attemptId: string,
+    userId: string,
+    questionId: string,
+    selectedOption: number | null,
+  ): Promise<boolean> {
+    const { data, error } = await this.client
+      .from("cbt_attempts")
+      .select("user_id, status, expires_at, question_snapshot")
+      .eq("id", attemptId)
+      .maybeSingle();
+    const attempt = required(data, error);
+    if (
+      !attempt
+      || attempt.user_id !== userId
+      || attempt.status !== "in_progress"
+      || new Date(attempt.expires_at).getTime() <= Date.now()
+      || !Array.isArray(attempt.question_snapshot)
+      || !attempt.question_snapshot.some((question: DatabaseRow) => question.id === questionId)
+    ) return false;
+
+    if (selectedOption === null) {
+      const { error } = await this.client
+        .from("cbt_attempt_answers")
+        .delete()
+        .eq("attempt_id", attemptId)
+        .eq("question_id", questionId);
+      if (error) throw new Error(error.message);
+    } else {
+      const { error } = await this.client.from("cbt_attempt_answers").upsert({
+        attempt_id: attemptId,
+        question_id: questionId,
+        selected_option: selectedOption,
+        answered_at: new Date().toISOString(),
+      });
+      if (error) throw new Error(error.message);
+    }
+    return true;
+  }
+
+  async finishCbtAttempt(
+    id: string,
+    update: Pick<CbtAttempt, "status" | "score" | "submittedAt">,
+  ): Promise<CbtAttempt | undefined> {
+    const payload: DatabaseRow = {};
+    payload.status = update.status;
+    payload.score = update.score;
+    payload.submitted_at = update.submittedAt?.toISOString() ?? null;
+    const { data, error } = await this.client
+      .from("cbt_attempts")
+      .update(payload)
+      .eq("id", id)
+      .eq("status", "in_progress")
+      .select("*")
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    return data ? this.getCbtAttempt(id) : undefined;
   }
 
   async getQuizAttempts(userId: string, quizId: string) {

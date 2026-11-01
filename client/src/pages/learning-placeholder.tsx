@@ -1,13 +1,13 @@
 import { useEffect } from "react";
 import { Link, useLocation } from "wouter";
-import { ArrowLeft, CalendarDays, ClipboardList } from "lucide-react";
+import { ArrowLeft, CalendarDays } from "lucide-react";
 import { Navbar } from "@/components/navbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/lib/auth-context";
 
 interface LearningPlaceholderProps {
-  feature: "events" | "cbt";
+  feature: "events";
 }
 
 const featureContent = {
@@ -15,11 +15,6 @@ const featureContent = {
     title: "Events",
     description: "See upcoming learning events here once event publishing and calendar reminders are available.",
     Icon: CalendarDays,
-  },
-  cbt: {
-    title: "CBT practice",
-    description: "JAMB-style mock tests and practice sessions will be available here once the CBT question bank and test engine are ready.",
-    Icon: ClipboardList,
   },
 };
 

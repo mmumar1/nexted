@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, boolean, integer, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, boolean, integer, timestamp, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { isNigerianLga, isNigerianState } from "./nigeria-locations.js";
@@ -169,6 +169,133 @@ export const quizQuestionSchema = z.object({
 });
 
 export type QuizQuestion = z.infer<typeof quizQuestionSchema>;
+
+export const cbtQuestionStatusSchema = z.enum(["draft", "published", "archived"]);
+export type CbtQuestionStatus = z.infer<typeof cbtQuestionStatusSchema>;
+
+export const cbtQuestionInputSchema = z.object({
+  subject: z.string().trim().min(1).max(80),
+  examYear: z.number().int().min(1950).max(2100),
+  question: z.string().trim().min(1).max(10000),
+  questionImageUrl: quizQuestionImageUrlSchema.optional(),
+  options: z.array(z.string().trim().min(1).max(2000)).length(4),
+  correctAnswer: z.number().int().min(1).max(4),
+  explanation: z.string().trim().max(10000).optional(),
+  explanationImageUrl: quizQuestionImageUrlSchema.optional(),
+});
+
+export type CbtQuestionInput = z.infer<typeof cbtQuestionInputSchema>;
+
+export type CbtQuestion = Omit<CbtQuestionInput, "questionImageUrl" | "explanation" | "explanationImageUrl"> & {
+  id: string;
+  questionImageUrl: string | null;
+  explanation: string | null;
+  explanationImageUrl: string | null;
+  status: CbtQuestionStatus;
+  createdBy: string;
+  updatedBy: string;
+  publishedBy: string | null;
+  publishedAt: Date | null;
+  archivedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type InsertCbtQuestion = CbtQuestionInput & { createdBy: string };
+
+export interface CbtQuestionFilters {
+  subject?: string;
+  examYear?: number;
+  status?: CbtQuestionStatus;
+  createdBy?: string;
+}
+
+export interface CbtQuestionCatalogEntry {
+  subject: string;
+  examYear: number;
+  count: number;
+}
+
+export type CbtAttemptMode = "self" | "mock";
+export type CbtAttemptStatus = "in_progress" | "submitted" | "expired";
+
+export interface CbtAttemptSelection {
+  subject: string;
+  examYear: number;
+  questionCount: number;
+}
+
+export interface CbtAttemptQuestion {
+  id: string;
+  subject: string;
+  examYear: number;
+  question: string;
+  questionImageUrl: string | null;
+  options: string[];
+  correctAnswer: number;
+  explanation: string | null;
+  explanationImageUrl: string | null;
+}
+
+export interface CbtAttempt {
+  id: string;
+  userId: string;
+  mode: CbtAttemptMode;
+  selections: CbtAttemptSelection[];
+  durationMinutes: number;
+  questions: CbtAttemptQuestion[];
+  answers: Record<string, number>;
+  status: CbtAttemptStatus;
+  score: number | null;
+  startedAt: Date;
+  expiresAt: Date;
+  submittedAt: Date | null;
+  createdAt: Date;
+}
+
+export type InsertCbtAttempt = Omit<CbtAttempt, "id" | "answers" | "score" | "submittedAt" | "createdAt">;
+
+export const cbtQuestions = pgTable("cbt_questions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  subject: text("subject").notNull(),
+  examYear: integer("exam_year").notNull(),
+  question: text("question").notNull(),
+  questionImageUrl: text("question_image_url"),
+  options: jsonb("options").$type<string[]>().notNull(),
+  correctAnswer: integer("correct_answer").notNull(),
+  explanation: text("explanation"),
+  explanationImageUrl: text("explanation_image_url"),
+  status: text("status").notNull().default("draft"),
+  createdBy: varchar("created_by").notNull(),
+  updatedBy: varchar("updated_by").notNull(),
+  publishedBy: varchar("published_by"),
+  publishedAt: timestamp("published_at"),
+  archivedAt: timestamp("archived_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const cbtAttempts = pgTable("cbt_attempts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  mode: text("mode").notNull(),
+  selections: jsonb("selections").$type<CbtAttemptSelection[]>().notNull(),
+  durationMinutes: integer("duration_minutes").notNull(),
+  questions: jsonb("question_snapshot").$type<CbtAttemptQuestion[]>().notNull(),
+  status: text("status").notNull().default("in_progress"),
+  score: integer("score"),
+  startedAt: timestamp("started_at").notNull().defaultNow(),
+  expiresAt: timestamp("expires_at").notNull(),
+  submittedAt: timestamp("submitted_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const cbtAttemptAnswers = pgTable("cbt_attempt_answers", {
+  attemptId: varchar("attempt_id").notNull(),
+  questionId: varchar("question_id").notNull(),
+  selectedOption: integer("selected_option").notNull(),
+  answeredAt: timestamp("answered_at").notNull().defaultNow(),
+});
 
 // Quiz attempts table
 export const quizAttempts = pgTable("quiz_attempts", {

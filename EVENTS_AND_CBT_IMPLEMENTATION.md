@@ -1,6 +1,12 @@
 # Events and CBT Implementation Specification
 
-This document captures the planned Events and JAMB-style CBT features. The current application adds student-menu navigation and placeholder pages, plus separate Events and CBT question-bank entry points in Admin CMS. Event management, notifications, calendar integration, question authoring, and test delivery are not implemented yet.
+This document captures the planned Events and JAMB-style CBT features. Student-menu navigation and placeholder pages are in place. The teacher/admin CBT question-authoring slice and student CBT test flow are implemented; event management, notifications, and calendar integration are not implemented.
+
+## Current implementation status
+
+- **CBT authoring (complete):** Staff can create questions manually or import a CSV (up to 200 questions per import), filter and edit their question bank, publish drafts, and archive or restore questions. Instructors manage their own questions; admins can manage all questions. Editing a published question returns it to draft for review.
+- **Student CBT flow (implemented):** Students can select published questions by subject and year, create self-tests or standard mocks, resume one active attempt, navigate and answer with automatic server persistence, submit or time out, and review scores, answers, explanations, and pace. Question snapshots, timing, scoring, ownership, and answer-key reveal are enforced server-side. Attempt creation is limited to 10 per minute per student.
+- **Events (not implemented):** The Events entry points remain placeholders.
 
 ## Navigation delivered now
 
@@ -8,7 +14,7 @@ This document captures the planned Events and JAMB-style CBT features. The curre
 - `/events` and `/cbt` open clear placeholder pages rather than 404s.
 - Keep these actions separate from Profile & settings and from the existing course quiz experience.
 - Admin CMS provides separate **Events** and **CBT question bank** sections on desktop navigation and the mobile section selector.
-- The Admin CMS sections explain the planned scope but do not expose nonfunctional create/edit controls.
+- The Events section remains a placeholder; the CBT section supports staff question authoring and management as described above.
 - Preserve the existing course quiz builder and its workflow; CBT question authoring must be implemented separately.
 
 ## Events
@@ -44,11 +50,14 @@ CBT means a separate computer-based test system for JAMB-standard mock preparati
 
 - Let students choose the available subject(s) and exam year before starting a practice test.
 - Generate a paper from the selected subject/year question bank.
-- Use 40 questions for each selected non-English subject and 60 questions for English. A multi-subject test includes the required count for each selected subject.
-- Provide a timed test with a visible countdown and a clear submission/expiry state.
+- For self-tests, let the student choose 1–200 questions per selected subject/year, subject to the published question count, and choose a duration of 15, 30, 45, 60, 90, or 120 minutes.
+- For mock tests, require 60 English questions and 40 per other selected subject, with a 120-minute duration.
+- Shuffle question and option order for each attempt while preserving the answer key.
+- Provide a timed test with a visible countdown and a clear submission/expiry state. The server deadline is authoritative.
 - Let students jump directly between questions, move forward/back, and see which questions are answered or unanswered.
 - Preserve answers while navigating. Confirm before a manual submit when unanswered questions remain; submit automatically when time expires.
-- Show results and review only according to the configured result/review policy.
+- On submission/expiry, show one point per correct answer with no penalty for wrong or blank answers, the correct answers and explanations, elapsed time, and average time per question.
+- Allow unlimited retakes, but only one in-progress attempt per student at a time.
 - Keep a student's in-progress attempt recoverable on refresh or temporary connection loss where safe and practical.
 
 ### Teacher/admin authoring
@@ -62,8 +71,8 @@ CBT means a separate computer-based test system for JAMB-standard mock preparati
 ### Test generation, timing, and scoring
 
 - Build attempts only from published questions for the selected subject/year; avoid repeating a question inside one attempt.
-- Confirm the exact exam duration policy before implementation. It was not specified yet whether timing is per subject or per combined paper, or what duration to use.
-- Define scoring, negative marking (if any), randomization, review availability, and retake behavior before launch; do not assume these policies from question counts alone.
+- **Resolved:** Self-test duration is selected from 15, 30, 45, 60, 90, or 120 minutes for the whole test. A mock test lasts 120 minutes.
+- **Resolved:** Scoring is +1 per correct answer, with no negative marking; questions and options are shuffled; score and answer/explanation review are shown after submission; retakes are unlimited.
 - Persist attempt start/end time, selected options, final score, and completion state securely.
 - Treat server-side attempt state and deadlines as authoritative; do not trust a client countdown or submitted score.
 
@@ -99,6 +108,6 @@ Answer: Candidate can select which year of question they want to access, this me
 2. Design the database schema, row-level authorization, and server APIs for events, notifications, CBT question banks, and attempts.
 3. Implement the teacher event authoring and event publication lifecycle.
 4. Implement student event listing, calendar export/sync, and notification delivery.
-5. Implement the teacher CBT question-bank editor and publishing workflow.
-6. Implement subject/year selection, timed test attempts, navigation, submission, scoring, and review.
-7. Add focused authorization, validation, time-expiry, retry/idempotency, and end-to-end tests before enabling the features.
+5. **Complete:** Implement the teacher CBT question-bank editor and publishing workflow.
+6. **Complete:** Implement subject/year selection, timed self-tests and mocks, navigation, answer persistence, submission, scoring, and review.
+7. **In progress:** Focused shuffle, scoring, and answer-key privacy tests pass. Add endpoint-level authorization, expiry, retry/idempotency, and end-to-end tests before expanding CBT policies or question formats.

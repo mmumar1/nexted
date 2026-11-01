@@ -11,6 +11,7 @@ This folder contains the starting database schema and row-level security setup f
 - `payment-migration.sql`: upgrade an existing database with subscription-owned enrollments.
 - `registration-profile-migration.sql`: upgrade an existing database for the expanded signup fields.
 - `module-video-urls-migration.sql`: upgrade an existing database to support multiple module video links.
+- `cbt-question-bank-migration.sql`: add the CBT question bank, student attempts, and answer storage.
 
 ## Recommended Supabase setup
 
@@ -26,6 +27,8 @@ This folder contains the starting database schema and row-level security setup f
 6. Restart the server after setting environment variables.
 
 For an existing Supabase project, run `registration-profile-migration.sql` in the SQL Editor before accepting new signups. The migration adds nullable profile columns and updates the auth-user trigger so new account metadata is copied into `public.profiles`. Existing profiles remain valid and their new fields will be `NULL`.
+
+For an existing project, run `cbt-question-bank-migration.sql` in the SQL Editor before using **Admin CMS -> CBT question bank** or student CBT practice. It creates the separate question, attempt, and answer tables and enables row-level security; authenticated server APIs use the service-role client after checking the student's or staff member's Supabase identity and role.
 
 ## Password reset
 

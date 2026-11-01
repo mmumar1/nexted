@@ -17,6 +17,7 @@ import Admin from "@/pages/admin-cms";
 import ForgotPassword from "@/pages/forgot-password";
 import ResetPassword from "@/pages/reset-password";
 import LearningPlaceholder from "@/pages/learning-placeholder";
+import Cbt from "@/pages/cbt";
 
 const LoginRoute = (props: any) => <Login {...props} />;
 const RegisterRoute = (props: any) => <Register {...props} />;
@@ -36,7 +37,8 @@ function Router() {
       <Route path="/quiz/:moduleId" component={Quiz} />
       <Route path="/projects" component={Projects} />
       <Route path="/events" component={() => <LearningPlaceholder feature="events" />} />
-      <Route path="/cbt" component={() => <LearningPlaceholder feature="cbt" />} />
+      <Route path="/cbt/attempt/:attemptId" component={Cbt} />
+      <Route path="/cbt" component={Cbt} />
       <Route path="/profile" component={Profile} />
       <Route path="/admin" component={Admin} />
       <Route path="/courses" component={Dashboard} />

@@ -13,7 +13,11 @@ import {
   insertModuleCompletionSchema,
   insertQuizAttemptSchema,
   insertProjectSchema,
+  cbtQuestionInputSchema,
   quizQuestionImageUrlSchema,
+  type CbtAttempt,
+  type CbtAttemptSelection,
+  type CbtQuestion,
   type Module,
   type QuizQuestion,
 } from "../shared/schema.js";
@@ -21,6 +25,13 @@ import { z } from "zod";
 import { createSupabaseAdminClient, createSupabaseAuthClient } from "./supabase-admin.js";
 import { compareModuleOrder } from "../shared/module-utils.js";
 import { normalizeQuizQuestionIndex } from "../shared/quiz-utils.js";
+import {
+  scoreCbtAttempt,
+  sampleCbtQuestions,
+  shuffleCbtQuestions,
+  toCbtAttemptHistoryEntry,
+  toCbtStudentAttempt,
+} from "./cbt-utils.js";
 
 const quizQuestionInputSchema = z.object({
   id: z.string(),
@@ -123,6 +134,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
 
     return requester;
+  };
+
+  const requireAuthenticatedStudent = async (req: Request, res: Response) => {
+    const authorization = req.header("Authorization");
+    const accessToken = authorization?.startsWith("Bearer ")
+      ? authorization.slice("Bearer ".length)
+      : undefined;
+    if (!accessToken) {
+      res.status(401).json({ error: "Supabase access token required" });
+      return undefined;
+    }
+
+    const { data, error } = await createSupabaseAuthClient().auth.getUser(accessToken);
+    if (error || !data.user) {
+      res.status(401).json({ error: "Invalid Supabase session" });
+      return undefined;
+    }
+
+    const requester = await storage.getUser(data.user.id);
+    if (!requester || requester.role !== "student") {
+      res.status(403).json({ error: "Student access required" });
+      return undefined;
+    }
+
+    return requester;
+  };
+
+  const finalizeCbtAttempt = async (attempt: CbtAttempt, forceExpired = false) => {
+    if (attempt.status !== "in_progress") return attempt;
+    const expired = forceExpired || attempt.expiresAt.getTime() <= Date.now();
+    const finished = await storage.finishCbtAttempt(attempt.id, {
+      status: expired ? "expired" : "submitted",
+      score: scoreCbtAttempt(attempt.questions, attempt.answers),
+      submittedAt: new Date(),
+    });
+    return finished ?? await storage.getCbtAttempt(attempt.id) ?? attempt;
   };
 
   const isSuperAdmin = (role?: string | null) => ["admin", "super_admin", "superadmin"].includes(role || "");
@@ -781,6 +828,446 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/admin/modules/:id", async (req, res) => {
     if (!(await requireAdmin(req.query.userId, res))) return;
     res.json({ deleted: await storage.deleteModule(req.params.id) });
+  });
+
+  const canManageCbtQuestion = (requester: { id: string; role: string }, createdBy: string) =>
+    isSuperAdmin(requester.role) || requester.id === createdBy;
+
+  const cbtAttemptRequestSchema = z.object({
+    mode: z.enum(["self", "mock"]),
+    durationMinutes: z.number().int().min(15).max(120),
+    selections: z.array(z.object({
+      subject: z.string().trim().min(1).max(80),
+      examYear: z.number().int().min(1950).max(2100),
+      questionCount: z.number().int().min(1).max(200),
+    })).min(1).max(10),
+  }).superRefine((input, context) => {
+    if (input.mode === "mock" && input.durationMinutes !== 120) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["durationMinutes"],
+        message: "Mock tests use a 120-minute duration.",
+      });
+    }
+
+    const seen = new Set<string>();
+    let totalQuestions = 0;
+    input.selections.forEach((selection, index) => {
+      const key = `${selection.subject.toLowerCase()}\u0000${selection.examYear}`;
+      if (seen.has(key)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["selections", index],
+          message: "A subject and year can only be selected once.",
+        });
+      }
+      seen.add(key);
+      totalQuestions += selection.questionCount;
+
+      if (input.mode === "mock") {
+        const standardCount = /^english(?:\b|$)/i.test(selection.subject) ? 60 : 40;
+        if (selection.questionCount !== standardCount) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["selections", index, "questionCount"],
+            message: `${selection.subject} mock tests require ${standardCount} questions.`,
+          });
+        }
+      }
+    });
+
+    if (input.mode === "self" && ![15, 30, 45, 60, 90, 120].includes(input.durationMinutes)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["durationMinutes"],
+        message: "Choose one of the available self-test durations.",
+      });
+    }
+    if (totalQuestions > 500) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["selections"],
+        message: "A single test cannot contain more than 500 questions.",
+      });
+    }
+  });
+
+  app.get("/api/cbt/catalog", async (req, res) => {
+    try {
+      if (!(await requireAuthenticatedStudent(req, res))) return;
+      res.json(await storage.getCbtQuestionCatalog());
+    } catch {
+      res.status(500).json({ error: "Failed to fetch available CBT questions" });
+    }
+  });
+
+  app.get("/api/cbt/attempts", async (req, res) => {
+    try {
+      const student = await requireAuthenticatedStudent(req, res);
+      if (!student) return;
+      const active = await storage.getActiveCbtAttempt(student.id);
+      if (active && active.expiresAt.getTime() <= Date.now()) await finalizeCbtAttempt(active, true);
+      const attempts = await storage.getCbtAttemptsForUser(student.id);
+      res.json(attempts.map(toCbtAttemptHistoryEntry));
+    } catch {
+      res.status(500).json({ error: "Failed to fetch CBT attempt history" });
+    }
+  });
+
+  app.get("/api/cbt/attempts/active", async (req, res) => {
+    try {
+      const student = await requireAuthenticatedStudent(req, res);
+      if (!student) return;
+      const attempt = await storage.getActiveCbtAttempt(student.id);
+      if (!attempt) return res.json(null);
+      const current = attempt.expiresAt.getTime() <= Date.now()
+        ? await finalizeCbtAttempt(attempt, true)
+        : attempt;
+      res.json(toCbtStudentAttempt(current));
+    } catch {
+      res.status(500).json({ error: "Failed to fetch the active CBT attempt" });
+    }
+  });
+
+  app.post("/api/cbt/attempts", async (req, res) => {
+    let studentId: string | undefined;
+    try {
+      const student = await requireAuthenticatedStudent(req, res);
+      if (!student) return;
+      studentId = student.id;
+      const input = cbtAttemptRequestSchema.parse(req.body);
+
+      const recentAttemptCount = await storage.countCbtAttemptsSince(
+        student.id,
+        new Date(Date.now() - 60_000),
+      );
+      if (recentAttemptCount >= 10) {
+        return res.status(429).json({ error: "Please wait a minute before starting another test." });
+      }
+
+      const activeAttempt = await storage.getActiveCbtAttempt(student.id);
+      if (activeAttempt) {
+        if (activeAttempt.expiresAt.getTime() <= Date.now()) {
+          await finalizeCbtAttempt(activeAttempt, true);
+        } else {
+          return res.status(409).json({
+            error: "Finish or resume your active CBT attempt before starting another.",
+            attemptId: activeAttempt.id,
+          });
+        }
+      }
+
+      const catalog = await storage.getCbtQuestionCatalog();
+      const canonicalSelections: CbtAttemptSelection[] = [];
+      const questionsToUse: CbtQuestion[] = [];
+      for (const selection of input.selections) {
+        const available = catalog.find((entry) =>
+          entry.examYear === selection.examYear
+          && entry.subject.toLowerCase() === selection.subject.toLowerCase(),
+        );
+        if (!available) {
+          return res.status(422).json({
+            error: `No published ${selection.subject} questions are available for ${selection.examYear}.`,
+          });
+        }
+        if (selection.questionCount > available.count) {
+          return res.status(422).json({
+            error: `Only ${available.count} published ${available.subject} questions are available for ${selection.examYear}.`,
+            availableCount: available.count,
+          });
+        }
+        canonicalSelections.push({ ...selection, subject: available.subject });
+        const bank = await storage.getCbtQuestions({
+          subject: available.subject,
+          examYear: selection.examYear,
+          status: "published",
+        });
+        if (bank.length < selection.questionCount) {
+          return res.status(409).json({ error: "The question bank changed. Refresh the subject list and try again." });
+        }
+        questionsToUse.push(...sampleCbtQuestions(bank, selection.questionCount));
+      }
+
+      const startedAt = new Date();
+      const expiresAt = new Date(startedAt.getTime() + input.durationMinutes * 60_000);
+      const attempt = await storage.createCbtAttempt({
+        userId: student.id,
+        mode: input.mode,
+        selections: canonicalSelections,
+        durationMinutes: input.durationMinutes,
+        questions: shuffleCbtQuestions(questionsToUse),
+        status: "in_progress",
+        startedAt,
+        expiresAt,
+      });
+      res.status(201).json(toCbtStudentAttempt(attempt));
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
+      if (
+        error instanceof Error
+        && (error.message.includes("idx_cbt_attempts_one_active_per_user")
+          || error.message.includes("An active CBT attempt already exists"))
+      ) {
+        const activeAttempt = studentId ? await storage.getActiveCbtAttempt(studentId) : undefined;
+        if (activeAttempt) {
+          return res.status(409).json({
+            error: "Another CBT attempt was started in a different session.",
+            attemptId: activeAttempt.id,
+          });
+        }
+      }
+      res.status(500).json({ error: "Failed to start CBT attempt" });
+    }
+  });
+
+  app.get("/api/cbt/attempts/:id", async (req, res) => {
+    try {
+      const student = await requireAuthenticatedStudent(req, res);
+      if (!student) return;
+      const id = z.string().uuid().parse(req.params.id);
+      const attempt = await storage.getCbtAttempt(id);
+      if (!attempt || attempt.userId !== student.id) {
+        return res.status(404).json({ error: "CBT attempt not found" });
+      }
+      const current = attempt.status === "in_progress" && attempt.expiresAt.getTime() <= Date.now()
+        ? await finalizeCbtAttempt(attempt, true)
+        : attempt;
+      res.json(toCbtStudentAttempt(current));
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
+      res.status(500).json({ error: "Failed to fetch CBT attempt" });
+    }
+  });
+
+  app.patch("/api/cbt/attempts/:id/answers", async (req, res) => {
+    try {
+      const student = await requireAuthenticatedStudent(req, res);
+      if (!student) return;
+      const id = z.string().uuid().parse(req.params.id);
+      const input = z.object({
+        questionId: z.string().uuid(),
+        selectedOption: z.number().int().min(1).max(4).nullable(),
+      }).parse(req.body);
+      const attempt = await storage.getCbtAttempt(id);
+      if (!attempt || attempt.userId !== student.id) {
+        return res.status(404).json({ error: "CBT attempt not found" });
+      }
+      if (attempt.status !== "in_progress") {
+        return res.status(409).json({ error: "This CBT attempt is already finished." });
+      }
+      if (attempt.expiresAt.getTime() <= Date.now()) {
+        const finished = await finalizeCbtAttempt(attempt, true);
+        return res.status(409).json({ error: "The time limit has ended.", attempt: toCbtStudentAttempt(finished) });
+      }
+      if (!attempt.questions.some((question) => question.id === input.questionId)) {
+        return res.status(400).json({ error: "Question does not belong to this attempt." });
+      }
+      const saved = await storage.saveCbtAttemptAnswer(
+        id,
+        student.id,
+        input.questionId,
+        input.selectedOption,
+      );
+      if (!saved) {
+        const refreshed = await storage.getCbtAttempt(id);
+        if (refreshed?.status === "in_progress" && refreshed.expiresAt.getTime() <= Date.now()) {
+          const finished = await finalizeCbtAttempt(refreshed, true);
+          return res.status(409).json({ error: "The time limit has ended.", attempt: toCbtStudentAttempt(finished) });
+        }
+        return res.status(409).json({ error: "This answer could not be saved because the attempt is no longer active." });
+      }
+      res.json({ questionId: input.questionId, selectedOption: input.selectedOption });
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
+      res.status(500).json({ error: "Failed to save CBT answer" });
+    }
+  });
+
+  app.post("/api/cbt/attempts/:id/submit", async (req, res) => {
+    try {
+      const student = await requireAuthenticatedStudent(req, res);
+      if (!student) return;
+      const id = z.string().uuid().parse(req.params.id);
+      const attempt = await storage.getCbtAttempt(id);
+      if (!attempt || attempt.userId !== student.id) {
+        return res.status(404).json({ error: "CBT attempt not found" });
+      }
+      const finished = await finalizeCbtAttempt(attempt);
+      res.json(toCbtStudentAttempt(finished));
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
+      res.status(500).json({ error: "Failed to submit CBT attempt" });
+    }
+  });
+
+  const getCbtQuestionOrRespond = async (id: string, requester: { id: string; role: string }, res: Response) => {
+    const question = await storage.getCbtQuestion(id);
+    if (!question) {
+      res.status(404).json({ error: "CBT question not found" });
+      return undefined;
+    }
+    if (!canManageCbtQuestion(requester, question.createdBy)) {
+      res.status(403).json({ error: "You can only manage CBT questions you created" });
+      return undefined;
+    }
+    return question;
+  };
+
+  app.get("/api/admin/cbt/questions", async (req, res) => {
+    try {
+      const requester = await requireAuthenticatedStaff(req, res);
+      if (!requester) return;
+      const filters = z.object({
+        subject: z.string().trim().min(1).max(80).optional(),
+        examYear: z.coerce.number().int().min(1950).max(2100).optional(),
+        status: z.enum(["draft", "published", "archived"]).optional(),
+      }).parse(req.query);
+      const questions = await storage.getCbtQuestions({
+        ...filters,
+        ...(!isSuperAdmin(requester.role) ? { createdBy: requester.id } : {}),
+      });
+      res.json(questions);
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
+      res.status(500).json({ error: "Failed to fetch CBT questions" });
+    }
+  });
+
+  app.post("/api/admin/cbt/questions", async (req, res) => {
+    try {
+      const requester = await requireAuthenticatedStaff(req, res);
+      if (!requester) return;
+      const input = cbtQuestionInputSchema.parse(req.body);
+      const [question] = await storage.createCbtQuestions([{ ...input, createdBy: requester.id }]);
+      res.status(201).json(question);
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
+      res.status(500).json({ error: "Failed to create CBT question" });
+    }
+  });
+
+  app.post("/api/admin/cbt/questions/import", async (req, res) => {
+    try {
+      const requester = await requireAuthenticatedStaff(req, res);
+      if (!requester) return;
+      const input = z.object({
+        subject: z.string().trim().min(1).max(80),
+        examYear: z.number().int().min(1950).max(2100),
+        questions: z.array(z.object({
+          question: z.string(),
+          questionImageUrl: z.string().optional(),
+          explanation: z.string().optional(),
+          explanationImageUrl: z.string().optional(),
+          options: z.array(z.string()).length(4),
+          correctAnswer: z.number().int().min(1).max(4),
+        })).min(1).max(200),
+      }).parse(req.body);
+      const questions = input.questions.map((question) => cbtQuestionInputSchema.parse({
+        ...question,
+        subject: input.subject,
+        examYear: input.examYear,
+        questionImageUrl: question.questionImageUrl || undefined,
+        explanation: question.explanation || undefined,
+        explanationImageUrl: question.explanationImageUrl || undefined,
+      }));
+      const created = await storage.createCbtQuestions(questions.map((question) => ({
+        ...question,
+        createdBy: requester.id,
+      })));
+      res.status(201).json({ imported: created.length, questions: created });
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
+      res.status(500).json({ error: "Failed to import CBT questions" });
+    }
+  });
+
+  app.patch("/api/admin/cbt/questions/:id", async (req, res) => {
+    try {
+      const requester = await requireAuthenticatedStaff(req, res);
+      if (!requester) return;
+      const id = z.string().uuid().parse(req.params.id);
+      const existing = await getCbtQuestionOrRespond(id, requester, res);
+      if (!existing) return;
+      const input = cbtQuestionInputSchema.parse(req.body);
+      const requiresReview = existing.status === "published";
+      const updated = await storage.updateCbtQuestion(id, {
+        ...input,
+        updatedBy: requester.id,
+        ...(requiresReview ? { status: "draft", publishedBy: null, publishedAt: null } : {}),
+      });
+      if (!updated) return res.status(404).json({ error: "CBT question not found" });
+      res.json(updated);
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
+      res.status(500).json({ error: "Failed to update CBT question" });
+    }
+  });
+
+  app.post("/api/admin/cbt/questions/:id/publish", async (req, res) => {
+    try {
+      const requester = await requireAuthenticatedStaff(req, res);
+      if (!requester) return;
+      const id = z.string().uuid().parse(req.params.id);
+      const existing = await getCbtQuestionOrRespond(id, requester, res);
+      if (!existing) return;
+      if (existing.status !== "draft") return res.status(409).json({ error: "Only draft CBT questions can be published" });
+      const question = await storage.updateCbtQuestion(id, {
+        status: "published",
+        updatedBy: requester.id,
+        publishedBy: requester.id,
+        publishedAt: new Date(),
+        archivedAt: null,
+      });
+      if (!question) return res.status(404).json({ error: "CBT question not found" });
+      res.json(question);
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
+      res.status(500).json({ error: "Failed to publish CBT question" });
+    }
+  });
+
+  app.post("/api/admin/cbt/questions/:id/archive", async (req, res) => {
+    try {
+      const requester = await requireAuthenticatedStaff(req, res);
+      if (!requester) return;
+      const id = z.string().uuid().parse(req.params.id);
+      const existing = await getCbtQuestionOrRespond(id, requester, res);
+      if (!existing) return;
+      if (existing.status === "archived") return res.status(409).json({ error: "CBT question is already archived" });
+      const question = await storage.updateCbtQuestion(id, {
+        status: "archived",
+        updatedBy: requester.id,
+        archivedAt: new Date(),
+      });
+      if (!question) return res.status(404).json({ error: "CBT question not found" });
+      res.json(question);
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
+      res.status(500).json({ error: "Failed to archive CBT question" });
+    }
+  });
+
+  app.post("/api/admin/cbt/questions/:id/restore", async (req, res) => {
+    try {
+      const requester = await requireAuthenticatedStaff(req, res);
+      if (!requester) return;
+      const id = z.string().uuid().parse(req.params.id);
+      const existing = await getCbtQuestionOrRespond(id, requester, res);
+      if (!existing) return;
+      if (existing.status !== "archived") return res.status(409).json({ error: "Only archived CBT questions can be restored" });
+      const question = await storage.updateCbtQuestion(id, {
+        status: "draft",
+        updatedBy: requester.id,
+        publishedBy: null,
+        publishedAt: null,
+        archivedAt: null,
+      });
+      if (!question) return res.status(404).json({ error: "CBT question not found" });
+      res.json(question);
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
+      res.status(500).json({ error: "Failed to restore CBT question" });
+    }
   });
 
   app.patch("/api/admin/modules/:id", async (req, res) => {

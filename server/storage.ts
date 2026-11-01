@@ -13,6 +13,12 @@ import {
   type InsertQuiz,
   type QuizAttempt,
   type InsertQuizAttempt,
+  type CbtQuestion,
+  type CbtQuestionFilters,
+  type InsertCbtQuestion,
+  type CbtQuestionCatalogEntry,
+  type CbtAttempt,
+  type InsertCbtAttempt,
   type Project,
   type InsertProject,
 } from "../shared/schema.js";
@@ -63,6 +69,22 @@ export interface IStorage {
   updateQuiz(id: string, data: Partial<InsertQuiz>): Promise<Quiz | undefined>;
   deleteQuiz(id: string): Promise<boolean>;
 
+  // CBT question bank
+  getCbtQuestions(filters?: CbtQuestionFilters): Promise<CbtQuestion[]>;
+  getCbtQuestion(id: string): Promise<CbtQuestion | undefined>;
+  createCbtQuestions(questions: InsertCbtQuestion[]): Promise<CbtQuestion[]>;
+  updateCbtQuestion(id: string, data: Partial<CbtQuestion>): Promise<CbtQuestion | undefined>;
+  getCbtQuestionCatalog(): Promise<CbtQuestionCatalogEntry[]>;
+
+  // CBT student attempts
+  createCbtAttempt(attempt: InsertCbtAttempt): Promise<CbtAttempt>;
+  countCbtAttemptsSince(userId: string, since: Date): Promise<number>;
+  getCbtAttempt(id: string): Promise<CbtAttempt | undefined>;
+  getActiveCbtAttempt(userId: string): Promise<CbtAttempt | undefined>;
+  getCbtAttemptsForUser(userId: string): Promise<CbtAttempt[]>;
+  saveCbtAttemptAnswer(attemptId: string, userId: string, questionId: string, selectedOption: number | null): Promise<boolean>;
+  finishCbtAttempt(id: string, data: Pick<CbtAttempt, "status" | "score" | "submittedAt">): Promise<CbtAttempt | undefined>;
+
   // Quiz Attempts
   getQuizAttempts(userId: string, quizId: string): Promise<QuizAttempt[]>;
   createQuizAttempt(attempt: InsertQuizAttempt): Promise<QuizAttempt>;
@@ -81,6 +103,8 @@ export class MemStorage implements IStorage {
   private modules: Map<string, Module>;
   private moduleCompletions: Map<string, ModuleCompletion>;
   private quizzes: Map<string, Quiz>;
+  private cbtQuestions: Map<string, CbtQuestion>;
+  private cbtAttempts: Map<string, CbtAttempt>;
   private quizAttempts: Map<string, QuizAttempt>;
   private projects: Map<string, Project>;
 
@@ -91,6 +115,8 @@ export class MemStorage implements IStorage {
     this.modules = new Map();
     this.moduleCompletions = new Map();
     this.quizzes = new Map();
+    this.cbtQuestions = new Map();
+    this.cbtAttempts = new Map();
     this.quizAttempts = new Map();
     this.projects = new Map();
 
@@ -603,6 +629,138 @@ export class MemStorage implements IStorage {
 
   async deleteQuiz(id: string): Promise<boolean> {
     return this.quizzes.delete(id);
+  }
+
+  // CBT question bank
+  async getCbtQuestions(filters: CbtQuestionFilters = {}): Promise<CbtQuestion[]> {
+    return Array.from(this.cbtQuestions.values())
+      .filter((question) => !filters.subject || question.subject.toLowerCase() === filters.subject.toLowerCase())
+      .filter((question) => filters.examYear === undefined || question.examYear === filters.examYear)
+      .filter((question) => !filters.status || question.status === filters.status)
+      .filter((question) => !filters.createdBy || question.createdBy === filters.createdBy)
+      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+  }
+
+  async getCbtQuestion(id: string): Promise<CbtQuestion | undefined> {
+    return this.cbtQuestions.get(id);
+  }
+
+  async createCbtQuestions(inputs: InsertCbtQuestion[]): Promise<CbtQuestion[]> {
+    const now = new Date();
+    const questions = inputs.map((input) => {
+      const question: CbtQuestion = {
+        ...input,
+        id: randomUUID(),
+        questionImageUrl: input.questionImageUrl ?? null,
+        explanation: input.explanation || null,
+        explanationImageUrl: input.explanationImageUrl ?? null,
+        status: "draft",
+        updatedBy: input.createdBy,
+        publishedBy: null,
+        publishedAt: null,
+        archivedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      };
+      return question;
+    });
+    for (const question of questions) this.cbtQuestions.set(question.id, question);
+    return questions;
+  }
+
+  async updateCbtQuestion(id: string, data: Partial<CbtQuestion>): Promise<CbtQuestion | undefined> {
+    const question = this.cbtQuestions.get(id);
+    if (!question) return undefined;
+    const updated = { ...question, ...data, updatedAt: data.updatedAt ?? new Date() };
+    this.cbtQuestions.set(id, updated);
+    return updated;
+  }
+
+  async getCbtQuestionCatalog(): Promise<CbtQuestionCatalogEntry[]> {
+    const grouped = new Map<string, CbtQuestionCatalogEntry>();
+    for (const question of Array.from(this.cbtQuestions.values())) {
+      if (question.status !== "published") continue;
+      const key = `${question.subject.toLowerCase()}\u0000${question.examYear}`;
+      const existing = grouped.get(key);
+      if (existing) existing.count += 1;
+      else grouped.set(key, { subject: question.subject, examYear: question.examYear, count: 1 });
+    }
+    return Array.from(grouped.values()).sort((a, b) =>
+      a.subject.localeCompare(b.subject) || b.examYear - a.examYear,
+    );
+  }
+
+  async createCbtAttempt(input: InsertCbtAttempt): Promise<CbtAttempt> {
+    if (Array.from(this.cbtAttempts.values()).some(
+      (attempt) => attempt.userId === input.userId && attempt.status === "in_progress",
+    )) {
+      throw new Error("An active CBT attempt already exists for this student");
+    }
+    const attempt: CbtAttempt = {
+      ...input,
+      id: randomUUID(),
+      answers: {},
+      score: null,
+      submittedAt: null,
+      createdAt: new Date(),
+    };
+    this.cbtAttempts.set(attempt.id, attempt);
+    return attempt;
+  }
+
+  async countCbtAttemptsSince(userId: string, since: Date): Promise<number> {
+    return Array.from(this.cbtAttempts.values())
+      .filter((attempt) => attempt.userId === userId && attempt.createdAt >= since)
+      .length;
+  }
+
+  async getCbtAttempt(id: string): Promise<CbtAttempt | undefined> {
+    return this.cbtAttempts.get(id);
+  }
+
+  async getActiveCbtAttempt(userId: string): Promise<CbtAttempt | undefined> {
+    return Array.from(this.cbtAttempts.values())
+      .find((attempt) => attempt.userId === userId && attempt.status === "in_progress");
+  }
+
+  async getCbtAttemptsForUser(userId: string): Promise<CbtAttempt[]> {
+    return Array.from(this.cbtAttempts.values())
+      .filter((attempt) => attempt.userId === userId)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, 20);
+  }
+
+  async saveCbtAttemptAnswer(
+    attemptId: string,
+    userId: string,
+    questionId: string,
+    selectedOption: number | null,
+  ): Promise<boolean> {
+    const attempt = this.cbtAttempts.get(attemptId);
+    if (
+      !attempt
+      || attempt.userId !== userId
+      || attempt.status !== "in_progress"
+      || attempt.expiresAt.getTime() <= Date.now()
+      || !attempt.questions.some((question) => question.id === questionId)
+    ) return false;
+
+    const answers = { ...attempt.answers };
+    if (selectedOption === null) delete answers[questionId];
+    else answers[questionId] = selectedOption;
+    this.cbtAttempts.set(attemptId, { ...attempt, answers });
+    return true;
+  }
+
+  async finishCbtAttempt(
+    id: string,
+    data: Pick<CbtAttempt, "status" | "score" | "submittedAt">,
+  ): Promise<CbtAttempt | undefined> {
+    const attempt = this.cbtAttempts.get(id);
+    if (!attempt || attempt.status !== "in_progress") return undefined;
+    const updated = { ...attempt, ...data };
+    this.cbtAttempts.set(id, updated);
+    return updated;
   }
 
   // Quiz Attempts

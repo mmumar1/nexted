@@ -261,7 +261,7 @@ export function Navbar() {
                   <SheetClose asChild>
                     <Link
                       href="/cbt"
-                      className={`flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground ${location === "/cbt" ? "bg-accent text-accent-foreground" : ""}`}
+                      className={`flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground ${location.startsWith("/cbt") ? "bg-accent text-accent-foreground" : ""}`}
                       data-testid="link-cbt"
                     >
                       <ClipboardList className="h-4 w-4" />

@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/lib/auth-context";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -16,7 +17,7 @@ import { supabase } from "@/lib/supabase";
 import { QuizMarkdownEditor } from "@/components/quiz/quiz-markdown";
 import type { AnnouncementRecord } from "@/lib/announcements";
 import type { Course, Module, QuizQuestion, User } from "@shared/schema";
-import { BarChart3, BookOpen, CalendarDays, ClipboardList, CreditCard, Download, FileQuestion, FileUp, LayoutDashboard, Plus, Settings2, Trash2, UserRound, Users } from "lucide-react";
+import { Archive, BarChart3, BookOpen, CalendarDays, ClipboardList, CreditCard, Download, FileQuestion, FileUp, LayoutDashboard, Pencil, Plus, RotateCcw, Send, Settings2, Trash2, UserRound, Users, X } from "lucide-react";
 import { isInitialEmptyQuizQuestion, parseQuizCsv, type QuizCsvPreview } from "@/lib/quiz-csv";
 
 type Section = "overview" | "courses" | "modules" | "quizzes" | "events" | "cbt" | "users" | "enrollments" | "analytics" | "announcements" | "payments";
@@ -79,6 +80,36 @@ interface ManualPaymentSubmission {
   reviewed_at: string | null;
   created_at: string;
   user: { full_name: string; email: string } | null;
+}
+
+interface CbtQuestionRecord {
+  id: string;
+  subject: string;
+  examYear: number;
+  question: string;
+  questionImageUrl: string | null;
+  options: string[];
+  correctAnswer: number;
+  explanation: string | null;
+  explanationImageUrl: string | null;
+  status: "draft" | "published" | "archived";
+  createdBy: string;
+  publishedBy: string | null;
+  publishedAt: string | null;
+  archivedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface CbtQuestionDraft {
+  subject: string;
+  examYear: string;
+  question: string;
+  questionImageUrl: string;
+  options: string[];
+  correctAnswer: string;
+  explanation: string;
+  explanationImageUrl: string;
 }
 
 const navItems: Array<{ id: Section; label: string; icon: typeof LayoutDashboard }> = [
@@ -766,11 +797,7 @@ export default function AdminCms() {
           )}
 
           {section === "cbt" && (
-            <PlannedFeaturePanel
-              title="CBT question bank"
-              description="Build JAMB-style mock test content separately from the existing course quiz builder."
-              details="The CBT tools will include subject and exam-year tagging, question authoring, draft and publish states, and question-bank readiness counts."
-            />
+            <CbtQuestionBankPanel userId={adminId} canManageAll={isSuperAdmin(user.role)} />
           )}
 
           {section === "users" && (
@@ -1112,6 +1139,367 @@ function ModulePanel({ courses, selectedCourseId, chooseCourse, modules, draft, 
               ))}
             </div>
           )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function createEmptyCbtQuestionDraft(): CbtQuestionDraft {
+  return {
+    subject: "",
+    examYear: String(new Date().getFullYear()),
+    question: "",
+    questionImageUrl: "",
+    options: ["", "", "", ""],
+    correctAnswer: "1",
+    explanation: "",
+    explanationImageUrl: "",
+  };
+}
+
+function CbtQuestionBankPanel({ userId, canManageAll }: { userId: string; canManageAll: boolean }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [draft, setDraft] = useState<CbtQuestionDraft>(createEmptyCbtQuestionDraft);
+  const [editingQuestionId, setEditingQuestionId] = useState<string | null>(null);
+  const [subjectFilter, setSubjectFilter] = useState("all");
+  const [yearFilter, setYearFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "draft" | "published" | "archived">("all");
+  const [csvPreview, setCsvPreview] = useState<QuizCsvPreview | null>(null);
+  const [csvFileName, setCsvFileName] = useState("");
+
+  const questionsQuery = useQuery<CbtQuestionRecord[]>({
+    queryKey: ["/api/admin/cbt/questions", userId],
+    queryFn: () => apiRequest("GET", "/api/admin/cbt/questions"),
+  });
+
+  const questions = questionsQuery.data ?? [];
+  const subjects = Array.from(new Set(questions.map((question) => question.subject))).sort((a, b) => a.localeCompare(b));
+  const years = Array.from(new Set(questions.map((question) => question.examYear))).sort((a, b) => b - a);
+  const filteredQuestions = questions.filter((question) =>
+    (subjectFilter === "all" || question.subject === subjectFilter)
+    && (yearFilter === "all" || question.examYear === Number(yearFilter))
+    && (statusFilter === "all" || question.status === statusFilter),
+  );
+
+  const resetDraft = () => {
+    setDraft(createEmptyCbtQuestionDraft());
+    setEditingQuestionId(null);
+  };
+
+  const saveQuestion = useMutation({
+    mutationFn: () => {
+      const payload = {
+        subject: draft.subject,
+        examYear: Number(draft.examYear),
+        question: draft.question,
+        questionImageUrl: draft.questionImageUrl.trim() || undefined,
+        options: draft.options,
+        correctAnswer: Number(draft.correctAnswer),
+        explanation: draft.explanation.trim() || undefined,
+        explanationImageUrl: draft.explanationImageUrl.trim() || undefined,
+      };
+      return apiRequest(
+        editingQuestionId ? "PATCH" : "POST",
+        editingQuestionId ? `/api/admin/cbt/questions/${editingQuestionId}` : "/api/admin/cbt/questions",
+        payload,
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/cbt/questions", userId] });
+      toast({
+        title: editingQuestionId ? "Question updated" : "Question saved as draft",
+        description: editingQuestionId && questions.find((question) => question.id === editingQuestionId)?.status === "published"
+          ? "The edited question returned to draft and must be reviewed before publishing."
+          : undefined,
+      });
+      resetDraft();
+    },
+    onError: (error: Error) => toast({ title: "Could not save question", description: error.message, variant: "destructive" }),
+  });
+
+  const importQuestions = useMutation({
+    mutationFn: () => {
+      if (!csvPreview || csvPreview.issues.length || !csvPreview.questions.length) {
+        throw new Error("Resolve all CSV issues before importing.");
+      }
+      if (!draft.subject.trim() || !draft.examYear) {
+        throw new Error("Enter a subject and exam year in the question form before importing.");
+      }
+      return apiRequest("POST", "/api/admin/cbt/questions/import", {
+        subject: draft.subject,
+        examYear: Number(draft.examYear),
+        questions: csvPreview.questions.map((question) => ({
+          question: question.question,
+          questionImageUrl: question.questionImageUrl || undefined,
+          options: question.options,
+          correctAnswer: Number(question.correctAnswer),
+          explanation: question.explanation || undefined,
+          explanationImageUrl: question.explanationImageUrl || undefined,
+        })),
+      });
+    },
+    onSuccess: (result: { imported: number }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/cbt/questions", userId] });
+      setCsvPreview(null);
+      setCsvFileName("");
+      toast({ title: "Questions imported as drafts", description: `${result.imported} question${result.imported === 1 ? "" : "s"} added to the question bank.` });
+    },
+    onError: (error: Error) => toast({ title: "Import failed", description: error.message, variant: "destructive" }),
+  });
+
+  const updateQuestionStatus = useMutation({
+    mutationFn: ({ id, action }: { id: string; action: "publish" | "archive" | "restore" }) =>
+      apiRequest("POST", `/api/admin/cbt/questions/${id}/${action}`),
+    onSuccess: (_result, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/cbt/questions", userId] });
+      const titles = { publish: "Question published", archive: "Question archived", restore: "Question restored as draft" };
+      toast({ title: titles[variables.action] });
+    },
+    onError: (error: Error) => toast({ title: "Could not update question status", description: error.message, variant: "destructive" }),
+  });
+
+  const handleCsvFile = async (file?: File) => {
+    setCsvPreview(null);
+    setCsvFileName(file?.name || "");
+    if (!file) return;
+    if (file.size > 1024 * 1024) {
+      setCsvPreview({ questions: [], issues: [{ row: 1, message: "CSV files must be 1 MB or smaller." }] });
+      return;
+    }
+    try {
+      setCsvPreview(parseQuizCsv(await file.text()));
+    } catch (error) {
+      setCsvPreview({
+        questions: [],
+        issues: [{ row: 1, message: error instanceof Error ? `Could not read CSV: ${error.message}` : "Could not read this CSV file." }],
+      });
+    }
+  };
+
+  const downloadCsvTemplate = () => {
+    const template = [
+      "question,option_a,option_b,option_c,option_d,correct_answer,explanation,question_image_url,explanation_image_url",
+      '"What is 2 + 2?","3","4","5","6","B","Basic addition","",""',
+    ].join("\r\n");
+    const url = URL.createObjectURL(new Blob([template], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "learnpedia-cbt-questions-template.csv";
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  const editQuestion = (question: CbtQuestionRecord) => {
+    setEditingQuestionId(question.id);
+    setDraft({
+      subject: question.subject,
+      examYear: String(question.examYear),
+      question: question.question,
+      questionImageUrl: question.questionImageUrl || "",
+      options: question.options,
+      correctAnswer: String(question.correctAnswer),
+      explanation: question.explanation || "",
+      explanationImageUrl: question.explanationImageUrl || "",
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>{editingQuestionId ? "Edit CBT question" : "Add a CBT question"}</CardTitle>
+          <CardDescription>
+            Questions are organized by subject and exam year, independently from course quizzes. New and imported questions are saved as drafts and are not available to students until published.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form
+            className="space-y-5"
+            onSubmit={(event) => {
+              event.preventDefault();
+              saveQuestion.mutate();
+            }}
+          >
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Subject">
+                <Input value={draft.subject} onChange={(event) => setDraft({ ...draft, subject: event.target.value })} placeholder="e.g. Mathematics" maxLength={80} required />
+              </Field>
+              <Field label="Exam year">
+                <Input type="number" min="1950" max="2100" value={draft.examYear} onChange={(event) => setDraft({ ...draft, examYear: event.target.value })} required />
+              </Field>
+            </div>
+            <Field label="Question">
+              <Textarea value={draft.question} onChange={(event) => setDraft({ ...draft, question: event.target.value })} rows={4} maxLength={10000} required />
+            </Field>
+            <Field label="Question image URL (optional)">
+              <Input type="url" value={draft.questionImageUrl} onChange={(event) => setDraft({ ...draft, questionImageUrl: event.target.value })} placeholder="https://example.com/image.png" />
+            </Field>
+            <div className="grid gap-4 sm:grid-cols-2">
+              {draft.options.map((option, index) => (
+                <Field key={index} label={`Option ${String.fromCharCode(65 + index)}`}>
+                  <Input
+                    value={option}
+                    onChange={(event) => setDraft({
+                      ...draft,
+                      options: draft.options.map((current, optionIndex) => optionIndex === index ? event.target.value : current),
+                    })}
+                    maxLength={2000}
+                    required
+                  />
+                </Field>
+              ))}
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Correct answer">
+                <select
+                  className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                  value={draft.correctAnswer}
+                  onChange={(event) => setDraft({ ...draft, correctAnswer: event.target.value })}
+                >
+                  {["A", "B", "C", "D"].map((letter, index) => <option key={letter} value={index + 1}>{letter}</option>)}
+                </select>
+              </Field>
+              <Field label="Explanation image URL (optional)">
+                <Input type="url" value={draft.explanationImageUrl} onChange={(event) => setDraft({ ...draft, explanationImageUrl: event.target.value })} placeholder="https://example.com/explanation.png" />
+              </Field>
+            </div>
+            <Field label="Explanation (optional)">
+              <Textarea value={draft.explanation} onChange={(event) => setDraft({ ...draft, explanation: event.target.value })} rows={3} maxLength={10000} />
+            </Field>
+            <div className="flex flex-wrap gap-2">
+              <Button type="submit" disabled={saveQuestion.isPending}>
+                {saveQuestion.isPending ? "Saving..." : editingQuestionId ? "Save changes" : "Save as draft"}
+              </Button>
+              {editingQuestionId && <Button type="button" variant="outline" onClick={resetDraft}><X className="mr-2 h-4 w-4" />Cancel edit</Button>}
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Import questions from CSV</CardTitle>
+          <CardDescription>Choose the subject and year above first. Every imported row is validated and saved as a draft; no question is published automatically.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Required columns: question, option_a through option_d, and correct_answer (A-D or 1-4). Explanations and image URLs are optional. Maximum file size is 1 MB and 200 questions per import.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="outline" size="sm" onClick={downloadCsvTemplate}><Download className="mr-2 h-4 w-4" />Download template</Button>
+            <Label htmlFor="cbt-csv-upload" className="inline-flex min-h-8 cursor-pointer items-center justify-center rounded-md border bg-background px-3 text-xs font-medium hover:bg-accent">
+              <FileUp className="mr-2 h-4 w-4" />Choose CSV
+            </Label>
+            <Input id="cbt-csv-upload" type="file" accept=".csv,text/csv" className="sr-only" onChange={(event) => void handleCsvFile(event.target.files?.[0])} />
+          </div>
+          {csvFileName && <p className="text-xs text-muted-foreground">Selected file: {csvFileName}</p>}
+          {csvPreview && (
+            <div className="space-y-3 rounded-md border bg-muted/20 p-3" aria-live="polite">
+              {csvPreview.issues.length > 0 ? (
+                <>
+                  <p className="font-medium text-destructive">Import blocked: fix all CSV errors before importing. {csvPreview.questions.length} valid rows found, but none have been saved.</p>
+                  <ul className="max-h-48 space-y-1 overflow-y-auto text-sm">
+                    {csvPreview.issues.map((issue, index) => <li key={`${issue.row}-${index}`} className="text-destructive">Row {issue.row}: {issue.message}</li>)}
+                  </ul>
+                </>
+              ) : (
+                <>
+                  <p className="font-medium text-emerald-700 dark:text-emerald-300">{csvPreview.questions.length} questions passed validation. They will be saved as drafts for {draft.subject || "the selected subject"} ({draft.examYear}).</p>
+                  <div className="max-h-48 space-y-2 overflow-y-auto">
+                    {csvPreview.questions.slice(0, 5).map((question, index) => (
+                      <div key={question.id} className="rounded-md border bg-background p-2 text-sm">
+                        <p className="font-medium">{index + 1}. {question.question}</p>
+                        <p className="mt-1 text-muted-foreground">Correct option: {["A", "B", "C", "D"][Number(question.correctAnswer) - 1]}</p>
+                      </div>
+                    ))}
+                    {csvPreview.questions.length > 5 && <p className="text-xs text-muted-foreground">And {csvPreview.questions.length - 5} more...</p>}
+                  </div>
+                  <Button type="button" disabled={importQuestions.isPending || !draft.subject.trim() || !draft.examYear} onClick={() => importQuestions.mutate()}>
+                    {importQuestions.isPending ? "Importing..." : `Import ${csvPreview.questions.length} drafts`}
+                  </Button>
+                </>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Question bank</CardTitle>
+          <CardDescription>
+            {canManageAll ? "Review questions from instructors and manage the shared bank." : "You can manage questions that you created. Publish only after reviewing their subject, year, answer, and explanation."}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <select className="h-10 rounded-md border bg-background px-3 text-sm" aria-label="Filter by subject" value={subjectFilter} onChange={(event) => setSubjectFilter(event.target.value)}>
+              <option value="all">All subjects</option>
+              {subjects.map((subject) => <option key={subject} value={subject}>{subject}</option>)}
+            </select>
+            <select className="h-10 rounded-md border bg-background px-3 text-sm" aria-label="Filter by exam year" value={yearFilter} onChange={(event) => setYearFilter(event.target.value)}>
+              <option value="all">All years</option>
+              {years.map((year) => <option key={year} value={year}>{year}</option>)}
+            </select>
+            <select className="h-10 rounded-md border bg-background px-3 text-sm" aria-label="Filter by status" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)}>
+              <option value="all">All statuses</option>
+              <option value="draft">Draft</option>
+              <option value="published">Published</option>
+              <option value="archived">Archived</option>
+            </select>
+          </div>
+          {questionsQuery.isPending && <p className="text-sm text-muted-foreground">Loading questions...</p>}
+          {questionsQuery.isError && <p className="text-sm text-destructive">Could not load the CBT question bank. Refresh to try again.</p>}
+          {!questionsQuery.isPending && !questionsQuery.isError && filteredQuestions.length === 0 && (
+            <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">No questions match these filters yet.</p>
+          )}
+          <div className="space-y-3">
+            {filteredQuestions.map((question) => (
+              <article key={question.id} className="rounded-xl border p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="mb-2 flex flex-wrap items-center gap-2">
+                      <Badge variant={question.status === "published" ? "default" : question.status === "archived" ? "destructive" : "secondary"}>{question.status}</Badge>
+                      <span className="text-xs font-medium text-muted-foreground">{question.subject} · {question.examYear}</span>
+                    </div>
+                    <p className="whitespace-pre-wrap font-medium">{question.question}</p>
+                  </div>
+                  <div className="flex shrink-0 flex-wrap gap-2">
+                    <Button type="button" size="sm" variant="outline" onClick={() => editQuestion(question)}><Pencil className="mr-1 h-3.5 w-3.5" />Edit</Button>
+                    {question.status === "draft" && (
+                      <Button type="button" size="sm" disabled={updateQuestionStatus.isPending} onClick={() => updateQuestionStatus.mutate({ id: question.id, action: "publish" })}>
+                        <Send className="mr-1 h-3.5 w-3.5" />Publish
+                      </Button>
+                    )}
+                    {question.status !== "archived" ? (
+                      <Button type="button" size="sm" variant="outline" disabled={updateQuestionStatus.isPending} onClick={() => updateQuestionStatus.mutate({ id: question.id, action: "archive" })}>
+                        <Archive className="mr-1 h-3.5 w-3.5" />Archive
+                      </Button>
+                    ) : (
+                      <Button type="button" size="sm" variant="outline" disabled={updateQuestionStatus.isPending} onClick={() => updateQuestionStatus.mutate({ id: question.id, action: "restore" })}>
+                        <RotateCcw className="mr-1 h-3.5 w-3.5" />Restore as draft
+                      </Button>
+                    )}
+                  </div>
+                </div>
+                <ol className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+                  {question.options.map((option, index) => (
+                    <li key={index} className={question.correctAnswer === index + 1 ? "font-semibold text-emerald-700 dark:text-emerald-300" : "text-muted-foreground"}>
+                      {String.fromCharCode(65 + index)}. {option}{question.correctAnswer === index + 1 ? " (answer)" : ""}
+                    </li>
+                  ))}
+                </ol>
+                {question.explanation && <p className="mt-3 whitespace-pre-wrap border-t pt-3 text-sm text-muted-foreground"><span className="font-medium text-foreground">Explanation:</span> {question.explanation}</p>}
+                <p className="mt-3 text-xs text-muted-foreground">
+                  Updated {new Date(question.updatedAt).toLocaleString("en-NG")}
+                  {question.publishedAt ? ` · Published ${new Date(question.publishedAt).toLocaleDateString("en-NG")}` : ""}
+                </p>
+              </article>
+            ))}
+          </div>
         </CardContent>
       </Card>
     </div>

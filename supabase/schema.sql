@@ -80,6 +80,64 @@ create table public.quizzes (
   updated_at timestamptz not null default now()
 );
 
+create table public.cbt_questions (
+  id uuid primary key default gen_random_uuid(),
+  subject text not null check (length(btrim(subject)) between 1 and 80),
+  exam_year integer not null check (exam_year between 1950 and 2100),
+  question text not null check (length(btrim(question)) between 1 and 10000),
+  question_image_url text,
+  options jsonb not null check (
+    case
+      when jsonb_typeof(options) = 'array' then jsonb_array_length(options) = 4
+      else false
+    end
+  ),
+  correct_answer integer not null check (correct_answer between 1 and 4),
+  explanation text check (explanation is null or length(explanation) <= 10000),
+  explanation_image_url text,
+  status text not null default 'draft' check (status in ('draft', 'published', 'archived')),
+  created_by uuid not null references public.profiles(id) on delete restrict,
+  updated_by uuid not null references public.profiles(id) on delete restrict,
+  published_by uuid references public.profiles(id) on delete set null,
+  published_at timestamptz,
+  archived_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table public.cbt_attempts (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  mode text not null check (mode in ('self', 'mock')),
+  selections jsonb not null check (jsonb_typeof(selections) = 'array'),
+  duration_minutes integer not null check (duration_minutes between 1 and 120),
+  question_snapshot jsonb not null check (
+    case
+      when jsonb_typeof(question_snapshot) = 'array' then jsonb_array_length(question_snapshot) > 0
+      else false
+    end
+  ),
+  status text not null default 'in_progress' check (status in ('in_progress', 'submitted', 'expired')),
+  score integer check (score is null or score >= 0),
+  started_at timestamptz not null default now(),
+  expires_at timestamptz not null,
+  submitted_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+create unique index idx_cbt_attempts_one_active_per_user
+  on public.cbt_attempts(user_id) where status = 'in_progress';
+create index idx_cbt_attempts_user_created
+  on public.cbt_attempts(user_id, created_at desc);
+
+create table public.cbt_attempt_answers (
+  attempt_id uuid not null references public.cbt_attempts(id) on delete cascade,
+  question_id uuid not null,
+  selected_option integer not null check (selected_option between 1 and 4),
+  answered_at timestamptz not null default now(),
+  primary key (attempt_id, question_id)
+);
+
 create table public.quiz_attempts (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.profiles(id) on delete cascade,
@@ -146,6 +204,8 @@ create index idx_modules_course on public.modules(course_id);
 create index idx_announcement_created_at on public.announcements(created_at desc);
 create index idx_payments_user on public.payments(user_id);
 create unique index idx_payments_provider_ref on public.payments(provider, provider_ref);
+create index idx_cbt_questions_subject_year_status on public.cbt_questions(subject, exam_year, status);
+create index idx_cbt_questions_creator_updated on public.cbt_questions(created_by, updated_at desc);
 create index idx_manual_payment_user on public.manual_payment_submissions(user_id);
 create index idx_manual_payment_status_created on public.manual_payment_submissions(status, created_at);
 create unique index idx_manual_payment_one_pending_per_user on public.manual_payment_submissions(user_id) where status = 'pending';

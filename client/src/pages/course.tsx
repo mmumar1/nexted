@@ -265,6 +265,7 @@ export default function CoursePage() {
               onTakeQuiz={() => handleTakeQuiz(activeModule.id)}
               onSelectModule={handleSelectModule}
               onRequestSubscription={() => setShowSubscriptionPrompt(true)}
+              onDismissSubscriptionPrompt={() => setShowSubscriptionPrompt(false)}
               onUpgrade={() => setLocation("/profile#payment-options")}
               onRedeemCoupon={() => setLocation("/profile#coupon-code")}
             />

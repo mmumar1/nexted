@@ -1,6 +1,13 @@
-import { ArrowLeft, ArrowRight, Play } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpenCheck, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { normalizeYouTubeEmbedUrl } from "@/lib/video";
 import { getModuleDisplayLabel } from "@/lib/module-utils";
 import { QuizMarkdownContent } from "@/components/quiz/quiz-markdown";
@@ -16,6 +23,7 @@ interface ModuleContentProps {
   onTakeQuiz: () => void;
   onSelectModule: (moduleId: string) => void;
   onRequestSubscription: () => void;
+  onDismissSubscriptionPrompt: () => void;
   onUpgrade: () => void;
   onRedeemCoupon: () => void;
 }
@@ -29,6 +37,7 @@ export function ModuleContent({
   onTakeQuiz,
   onSelectModule,
   onRequestSubscription,
+  onDismissSubscriptionPrompt,
   onUpgrade,
   onRedeemCoupon,
 }: ModuleContentProps) {
@@ -93,18 +102,55 @@ export function ModuleContent({
           )}
         </div>
 
-        {requiresSubscription && showSubscriptionPrompt && (
-          <div className="mt-6 flex flex-col gap-3 rounded-md border border-primary/25 bg-primary/5 p-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h3 className="font-semibold text-foreground">Continue learning with all-course access</h3>
-              <p className="mt-1 text-sm text-muted-foreground">Choose a plan to unlock this and all other courses, or redeem a discount code.</p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button onClick={onUpgrade}>View payment plans</Button>
-              <Button variant="outline" onClick={onRedeemCoupon}>Redeem coupon</Button>
-            </div>
-          </div>
-        )}
+        <Dialog
+          open={requiresSubscription && showSubscriptionPrompt}
+          onOpenChange={(open) => {
+            if (!open) onDismissSubscriptionPrompt();
+          }}
+        >
+          <DialogContent
+            className="inset-0 flex h-[100dvh] w-full max-w-none translate-x-0 translate-y-0 flex-col justify-center overflow-y-auto rounded-none border-0 bg-slate-950/85 p-4 backdrop-blur-md sm:inset-0 sm:h-[100dvh] sm:w-full sm:max-w-none sm:rounded-none sm:p-8 [&>button]:right-5 [&>button]:top-5 [&>button]:z-10 [&>button]:rounded-full [&>button]:bg-background [&>button]:p-2 [&>button]:opacity-100 [&>button]:shadow-md"
+            data-testid="dialog-course-subscription-prompt"
+          >
+            <section className="mx-auto w-full max-w-2xl overflow-hidden rounded-3xl border bg-card shadow-2xl">
+              <div className="bg-gradient-to-br from-primary/15 via-primary/5 to-transparent px-6 pb-7 pt-10 text-center sm:px-12 sm:pb-10 sm:pt-14">
+                <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg">
+                  <BookOpenCheck className="h-8 w-8" aria-hidden="true" />
+                </div>
+                <Badge variant="secondary" className="mb-4">All-course access</Badge>
+                <DialogHeader className="items-center space-y-3">
+                  <DialogTitle className="max-w-xl text-3xl font-extrabold leading-tight sm:text-4xl">
+                    Unlock all courses and modules on Learnpedia
+                  </DialogTitle>
+                  <DialogDescription className="max-w-lg text-base leading-relaxed sm:text-lg">
+                    Choose a monthly or yearly all-access plan to continue learning this course and explore every other course on the platform.
+                  </DialogDescription>
+                </DialogHeader>
+              </div>
+              <div className="space-y-5 px-6 pb-7 sm:px-12 sm:pb-10">
+                <div className="rounded-xl border bg-muted/40 p-4 text-center text-sm text-muted-foreground">
+                  Your access stays active for the period included with the plan you choose. No payment is made until you select a plan and complete checkout.
+                </div>
+                <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
+                  <Button size="lg" className="w-full sm:w-auto" onClick={onUpgrade}>
+                    View payment plans
+                  </Button>
+                  <Button size="lg" variant="outline" className="w-full sm:w-auto" onClick={onRedeemCoupon}>
+                    Redeem a coupon
+                  </Button>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="mx-auto block text-muted-foreground"
+                  onClick={onDismissSubscriptionPrompt}
+                >
+                  Continue with the free modules
+                </Button>
+              </div>
+            </section>
+          </DialogContent>
+        </Dialog>
       </div>
 
       <footer className="flex items-center justify-between gap-3 border-t px-5 py-4 sm:px-7">

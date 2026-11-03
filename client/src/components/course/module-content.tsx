@@ -12,9 +12,10 @@ interface ModuleContentProps {
   previousModule?: Module;
   nextModule?: Module;
   requiresSubscription?: boolean;
-  isStartingUpgrade?: boolean;
+  showSubscriptionPrompt?: boolean;
   onTakeQuiz: () => void;
   onSelectModule: (moduleId: string) => void;
+  onRequestSubscription: () => void;
   onUpgrade: () => void;
   onRedeemCoupon: () => void;
 }
@@ -24,9 +25,10 @@ export function ModuleContent({
   previousModule,
   nextModule,
   requiresSubscription = false,
-  isStartingUpgrade = false,
+  showSubscriptionPrompt = false,
   onTakeQuiz,
   onSelectModule,
+  onRequestSubscription,
   onUpgrade,
   onRedeemCoupon,
 }: ModuleContentProps) {
@@ -37,7 +39,6 @@ export function ModuleContent({
       : [])
     .map((videoUrl) => normalizeYouTubeEmbedUrl(videoUrl))
     .filter((embedUrl): embedUrl is string => !!embedUrl);
-  const canGoNext = !!nextModule;
   const moduleLabel = getModuleDisplayLabel(module, [previousModule ?? module, nextModule ?? module, module].filter(Boolean) as Module[]);
 
   return (
@@ -92,16 +93,14 @@ export function ModuleContent({
           )}
         </div>
 
-        {requiresSubscription && (
+        {requiresSubscription && showSubscriptionPrompt && (
           <div className="mt-6 flex flex-col gap-3 rounded-md border border-primary/25 bg-primary/5 p-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h3 className="font-semibold text-foreground">Unlock the rest of this course</h3>
-              <p className="mt-1 text-sm text-muted-foreground">Upgrade to continue, or redeem a discount code.</p>
+              <h3 className="font-semibold text-foreground">Continue learning with all-course access</h3>
+              <p className="mt-1 text-sm text-muted-foreground">Choose a plan to unlock this and all other courses, or redeem a discount code.</p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button onClick={onUpgrade} disabled={isStartingUpgrade}>
-                {isStartingUpgrade ? "Opening checkout..." : "Upgrade with Paystack"}
-              </Button>
+              <Button onClick={onUpgrade}>View payment plans</Button>
               <Button variant="outline" onClick={onRedeemCoupon}>Redeem coupon</Button>
             </div>
           </div>
@@ -114,7 +113,16 @@ export function ModuleContent({
           <span className="hidden sm:inline">Previous module</span>
           <span className="sm:hidden">Previous</span>
         </Button>
-        <Button variant="outline" className="gap-2" disabled={!nextModule || !canGoNext} onClick={() => nextModule && onSelectModule(nextModule.id)}>
+        <Button
+          variant="outline"
+          className="gap-2"
+          disabled={!nextModule && !requiresSubscription}
+          aria-expanded={requiresSubscription ? showSubscriptionPrompt : undefined}
+          onClick={() => {
+            if (nextModule) onSelectModule(nextModule.id);
+            else if (requiresSubscription) onRequestSubscription();
+          }}
+        >
           <span className="hidden sm:inline">Next module</span>
           <span className="sm:hidden">Next</span>
           <ArrowRight className="h-4 w-4" />

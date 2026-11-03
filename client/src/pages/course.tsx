@@ -13,7 +13,7 @@ import { useAuth } from "@/lib/auth-context";
 import type { Module, Course, ModuleCompletion } from "@shared/schema";
 import { ModuleContent } from "@/components/course/module-content";
 import { ModuleSidebar, type CourseModuleItem } from "@/components/course/module-sidebar";
-import { isModuleUnlocked } from "@/lib/access-rules";
+import { isInFreeModuleTier, isModuleUnlocked } from "@/lib/access-rules";
 import { compareModuleOrder } from "@/lib/module-utils";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -25,6 +25,7 @@ export default function CoursePage() {
   const { user, isAuthenticated } = useAuth();
   const { toast } = useToast();
   const [isModuleSheetOpen, setModuleSheetOpen] = useState(false);
+  const [showSubscriptionPrompt, setShowSubscriptionPrompt] = useState(false);
   const courseId = moduleParams?.courseId || legacyParams?.id || "1";
   const requestedModuleId = moduleParams?.moduleId;
 
@@ -96,8 +97,9 @@ export default function CoursePage() {
     const hasUnpassedPreviousQuiz = baseModulesWithCompletion
       .slice(0, index)
       .some((previousModule) => previousModule.hasQuiz && !previousModule.isQuizPassed);
+    const isWithinFreeTier = isInFreeModuleTier(module, baseModulesWithCompletion);
     const requiresSubscription = !hasActiveSubscription
-      && module.order > 2
+      && !isWithinFreeTier
       && !hasUnpassedPreviousQuiz
       && (!module.prerequisiteModuleId || !!prerequisiteModule?.isQuizPassed);
     const isLocked = !isModuleUnlocked({
@@ -105,7 +107,7 @@ export default function CoursePage() {
       hasPrerequisiteQuiz: !!prerequisiteModule?.hasQuiz,
       prerequisiteQuizPassed: !!prerequisiteModule?.isQuizPassed,
       hasActiveSubscription,
-      isModuleWithinFreeTier: module.order <= 2,
+      isModuleWithinFreeTier: isWithinFreeTier,
     });
 
     return {
@@ -140,6 +142,7 @@ export default function CoursePage() {
 
   const handleSelectModule = (moduleId: string) => {
     setModuleSheetOpen(false);
+    setShowSubscriptionPrompt(false);
     setLocation(`/course/${courseId}/module/${moduleId}`);
   };
 
@@ -258,9 +261,10 @@ export default function CoursePage() {
               previousModule={previousModule}
               nextModule={nextModule}
               requiresSubscription={!!nextModuleCandidate?.requiresSubscription}
-              isStartingUpgrade={false}
+              showSubscriptionPrompt={showSubscriptionPrompt}
               onTakeQuiz={() => handleTakeQuiz(activeModule.id)}
               onSelectModule={handleSelectModule}
+              onRequestSubscription={() => setShowSubscriptionPrompt(true)}
               onUpgrade={() => setLocation("/profile#payment-options")}
               onRedeemCoupon={() => setLocation("/profile#coupon-code")}
             />

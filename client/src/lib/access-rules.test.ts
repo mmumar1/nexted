@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   canAccessCourse,
+  isInFreeModuleTier,
   isModuleUnlocked,
   type CourseAccessState,
   type ModuleAccessState,
@@ -36,6 +37,27 @@ describe('access rules', () => {
     };
 
     assert.equal(isModuleUnlocked(state), false);
+  });
+
+  it('keeps submodules of the first parent module in the free tier', () => {
+    const modules = [
+      { id: 'parent-1', order: 1 },
+      { id: 'submodule-1-2', order: 2, parentModuleId: 'parent-1' },
+      { id: 'parent-2', order: 2 },
+    ];
+
+    assert.equal(isInFreeModuleTier(modules[1], modules), true);
+  });
+
+  it('locks the second parent module and its submodules outside the free tier', () => {
+    const modules = [
+      { id: 'parent-1', order: 1 },
+      { id: 'parent-2', order: 2 },
+      { id: 'submodule-2-1', order: 1, parentModuleId: 'parent-2' },
+    ];
+
+    assert.equal(isInFreeModuleTier(modules[1], modules), false);
+    assert.equal(isInFreeModuleTier(modules[2], modules), false);
   });
 
   it('allows a module when all prerequisite steps are satisfied', () => {

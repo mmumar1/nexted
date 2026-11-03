@@ -1,10 +1,11 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, MessageCircle, Send } from "lucide-react";
+import { ArrowLeft, BookOpen, MessageCircle, Search, Send } from "lucide-react";
 import { Link, useLocation, useRoute } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Navbar } from "@/components/navbar";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth-context";
@@ -38,6 +39,12 @@ interface ThreadResponse {
   messages: ThreadMessage[];
 }
 
+interface MessageableCourse {
+  id: string;
+  title: string;
+  instructorName: string;
+}
+
 export default function MessagesPage() {
   const [, params] = useRoute("/messages/:conversationId");
   const [, setLocation] = useLocation();
@@ -46,6 +53,7 @@ export default function MessagesPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState("");
+  const [courseSearch, setCourseSearch] = useState("");
 
   useEffect(() => {
     if (!isAuthenticated) setLocation("/login");
@@ -56,6 +64,29 @@ export default function MessagesPage() {
     queryFn: () => apiRequest("GET", "/api/messages"),
     enabled: !!user?.id,
     refetchInterval: 15_000,
+  });
+
+  const {
+    data: messageableCourses = [],
+    isLoading: coursesLoading,
+    isError: coursesError,
+  } = useQuery<MessageableCourse[]>({
+    queryKey: ["/api/messages/courses", user?.id],
+    queryFn: () => apiRequest("GET", "/api/messages/courses"),
+    enabled: !!user?.id && user.role === "student",
+  });
+
+  const openCourseConversation = useMutation({
+    mutationFn: (courseId: string) => apiRequest("POST", `/api/messages/course/${courseId}`),
+    onSuccess: async (conversation: Conversation) => {
+      await queryClient.invalidateQueries({ queryKey: ["/api/messages", user?.id] });
+      setLocation(`/messages/${conversation.id}`);
+    },
+    onError: (error: Error) => toast({
+      title: "Could not open instructor conversation",
+      description: error.message,
+      variant: "destructive",
+    }),
   });
 
   const {
@@ -100,6 +131,10 @@ export default function MessagesPage() {
 
   if (!user) return null;
 
+  const normalizedSearch = courseSearch.trim().toLocaleLowerCase();
+  const filteredCourses = messageableCourses.filter((course) =>
+    `${course.title} ${course.instructorName}`.toLocaleLowerCase().includes(normalizedSearch)
+  );
   const activeConversation = thread?.conversation
     ?? conversations.find((conversation) => conversation.id === conversationId);
   const otherParticipant = activeConversation
@@ -117,8 +152,57 @@ export default function MessagesPage() {
         </h1>
         <div className="grid min-h-[min(72vh,48rem)] overflow-hidden rounded-xl border bg-card md:grid-cols-[18rem_minmax(0,1fr)]">
           <aside className={`${conversationId ? "hidden md:block" : ""} border-b md:border-b-0 md:border-r`}>
-            <div className="border-b p-4">
-              <h2 className="font-semibold">Conversations</h2>
+            <div className="space-y-4 border-b p-4">
+              <div>
+                <h2 className="font-semibold">Find an instructor</h2>
+                <p className="mt-1 text-xs text-muted-foreground">Search courses by title or instructor name.</p>
+              </div>
+              {user.role === "student" && (
+                <>
+                  <label className="relative block">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      type="search"
+                      value={courseSearch}
+                      onChange={(event) => setCourseSearch(event.target.value)}
+                      placeholder="Search courses or instructors"
+                      aria-label="Search courses or instructors"
+                      className="pl-9"
+                    />
+                  </label>
+                  <div className="max-h-48 space-y-1 overflow-y-auto" aria-live="polite">
+                    {coursesLoading ? (
+                      <p className="p-2 text-sm text-muted-foreground">Loading courses...</p>
+                    ) : coursesError ? (
+                      <p className="p-2 text-sm text-destructive" role="alert">Courses could not be loaded.</p>
+                    ) : filteredCourses.length === 0 ? (
+                      <p className="p-2 text-sm text-muted-foreground">
+                        {normalizedSearch ? "No matching courses or instructors." : "No courses with an available instructor yet."}
+                      </p>
+                    ) : filteredCourses.slice(0, 30).map((course) => (
+                      <button
+                        key={course.id}
+                        type="button"
+                        onClick={() => openCourseConversation.mutate(course.id)}
+                        disabled={openCourseConversation.isPending}
+                        className="flex w-full items-start gap-3 rounded-lg p-2 text-left hover:bg-accent disabled:opacity-50"
+                      >
+                        <BookOpen className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-medium">{course.title}</span>
+                          <span className="block truncate text-xs text-muted-foreground">{course.instructorName}</span>
+                        </span>
+                      </button>
+                    ))}
+                    {filteredCourses.length > 30 && (
+                      <p className="px-2 py-1 text-xs text-muted-foreground">Refine your search to see more results.</p>
+                    )}
+                  </div>
+                </>
+              )}
+              <div className="border-t pt-3">
+                <h2 className="font-semibold">Conversations</h2>
+              </div>
             </div>
             <div className="max-h-[70vh] overflow-y-auto p-2">
               {conversationsLoading ? (
@@ -126,7 +210,7 @@ export default function MessagesPage() {
               ) : conversationsError ? (
                 <p className="p-3 text-sm text-destructive" role="alert">Conversations could not be loaded.</p>
               ) : conversations.length === 0 ? (
-                <p className="p-3 text-sm text-muted-foreground">Start a conversation from a course page.</p>
+                <p className="p-3 text-sm text-muted-foreground">Choose a course above to start a conversation. Your chats will appear here.</p>
               ) : conversations.map((conversation) => {
                 const participant = user.id === conversation.studentId
                   ? conversation.instructorName
@@ -220,7 +304,7 @@ export default function MessagesPage() {
               <div className="m-auto hidden max-w-sm p-8 text-center md:block">
                 <MessageCircle className="mx-auto mb-3 h-10 w-10 text-muted-foreground" />
                 <h2 className="font-semibold">Your course inbox</h2>
-                <p className="mt-2 text-sm text-muted-foreground">Choose a conversation or open a course to message its instructor.</p>
+                <p className="mt-2 text-sm text-muted-foreground">Search for a course or instructor, or choose one of your conversations.</p>
               </div>
             )}
           </section>

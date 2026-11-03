@@ -14,19 +14,31 @@ This folder contains the starting database schema and row-level security setup f
 - `cbt-question-bank-migration.sql`: add the CBT question bank, student attempts, and answer storage.
 - `cbt-exam-topics-migration.sql`: add JAMB/UTME or WAEC/NECO categories and topics to the CBT bank.
 - `events-notifications-migration.sql`: add staff-managed events, student RSVPs, and in-app event notifications.
+- `migrations/20261103000000_course_enrollments.sql`: separate learner enrollment from content access and preserve historical course activity.
 
 ## Recommended Supabase setup
 
 1. Create a new Supabase project.
 2. Open the SQL editor and run `schema.sql` first.
 3. Run `rls.sql` second.
-4. Register one user in Learnpedia, promote that user's profile to `super_admin`, then run `seed.sql`.
-5. Add the following environment variables to your Vercel app/server:
+4. Run `migrations/20261103000000_course_enrollments.sql` to configure the enrollment/progress policies.
+5. Register one user in Learnpedia, promote that user's profile to `super_admin`, then run `seed.sql`.
+6. Add the following environment variables to your Vercel app/server:
    - `SUPABASE_URL` and `SUPABASE_ANON_KEY` (or the legacy `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`)
    - `SUPABASE_SERVICE_ROLE_KEY`
    - `STRIPE_SECRET_KEY`
    - `PAYSTACK_SECRET_KEY`
-6. Restart the server after setting environment variables.
+7. Restart the server after setting environment variables.
+
+## Enrollment and access are separate
+
+`course_enrollments` records a student's decision to participate in a course. Students enroll from a published course card when self-enrollment is enabled; instructors can enroll students in courses assigned to them, and super admins can view progress across all courses. Enrolling does not grant paid access.
+
+`user_courses` remains the content-access grant table used for subscription-owned access. Subscription access can unlock course content without automatically enrolling the student. The migration backfills prior manual enrollments and students who already have module completions or quiz attempts, so existing learning history is not lost.
+
+Instructors can see individual progress only for courses assigned to them. Course progress includes module completion, latest quiz scores/pass status, and last recorded learning activity; it does not infer time spent or general engagement.
+
+For an existing database, ensure `payment-migration.sql` has added `user_courses.access_source`, then apply `migrations/20261103000000_course_enrollments.sql` before deploying the enrollment and learner-progress UI. It creates the enrollment table, transfers historical participation, and updates row-level security so students cannot grant themselves content access by inserting into `user_courses`.
 
 For an existing Supabase project, run `registration-profile-migration.sql` in the SQL Editor before accepting new signups. The migration adds nullable profile columns and updates the auth-user trigger so new account metadata is copied into `public.profiles`. Existing profiles remain valid and their new fields will be `NULL`.
 

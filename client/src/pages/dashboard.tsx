@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Navbar } from "@/components/navbar";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,7 @@ import { Lock, Play, BookOpen, Trophy, CheckCircle2, Bell, Medal } from "lucide-
 import { Link } from "wouter";
 import { useAuth } from "@/lib/auth-context";
 import { apiRequest } from "@/lib/queryClient";
-import { canAccessCourse } from "@/lib/access-rules";
+import { useToast } from "@/hooks/use-toast";
 import type { AnnouncementRecord } from "@/lib/announcements";
 
 interface CourseWithProgress {
@@ -21,7 +21,9 @@ interface CourseWithProgress {
   description: string;
   thumbnail: string | null;
   accessCode: string;
+  enrollmentMode: "self" | "restricted";
   isUnlocked: boolean;
+  isEnrolled: boolean;
   progress?: number;
   totalModules?: number;
   completedModules?: number;
@@ -136,6 +138,8 @@ function orderDashboardCourses(
 export default function Dashboard() {
   const [, setLocation] = useLocation();
   const { user, isAuthenticated } = useAuth();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [orderedCoursesState, setOrderedCoursesState] = useState<{
     userId: string;
     courses: CourseWithProgress[];
@@ -158,6 +162,18 @@ export default function Dashboard() {
     enabled: !!user?.id,
   });
 
+  const enroll = useMutation({
+    mutationFn: (courseId: string) => apiRequest("POST", `/api/courses/${courseId}/enroll`),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["/api/dashboard", user?.id] });
+    },
+    onError: (error: Error) => toast({
+      title: "Could not enroll in course",
+      description: error.message,
+      variant: "destructive",
+    }),
+  });
+
   useEffect(() => {
     if (!user?.id || !courses) {
       setOrderedCoursesState(null);
@@ -165,19 +181,21 @@ export default function Dashboard() {
     }
     setOrderedCoursesState({
       userId: user.id,
-      courses: orderDashboardCourses(courses, user.id),
+      courses: orderDashboardCourses(courses.filter((course) => course.isEnrolled), user.id),
     });
   }, [courses, user?.id]);
 
   if (!user) return null;
 
-  const displayedCourses =
-    orderedCoursesState?.userId === user.id ? orderedCoursesState.courses : courses;
   const userName = user.fullName;
   const hasSubscriptionAccess = !!user?.hasActiveSubscription;
-  const unlockedCount = courses?.filter((c) => canAccessCourse({ hasActiveSubscription: hasSubscriptionAccess, isUnlocked: c.isUnlocked })).length || 0;
-  const totalCompleted = courses?.reduce((sum, c) => sum + (c.completedModules || 0), 0) || 0;
-  const continueCourses = courses?.filter((course) => canAccessCourse({ hasActiveSubscription: hasSubscriptionAccess, isUnlocked: course.isUnlocked }) && (course.progress || 0) > 0 && (course.progress || 0) < 100) || [];
+  const enrolledCourses = orderedCoursesState?.userId === user.id
+    ? orderedCoursesState.courses
+    : courses?.filter((course) => course.isEnrolled) || [];
+  const catalogCourses = courses?.filter((course) => !course.isEnrolled) || [];
+  const enrolledCount = enrolledCourses.length;
+  const totalCompleted = enrolledCourses.reduce((sum, course) => sum + (course.completedModules || 0), 0);
+  const continueCourses = enrolledCourses.filter((course) => (course.progress || 0) > 0 && (course.progress || 0) < 100);
 
   return (
     <div className="min-h-screen bg-background">
@@ -196,12 +214,12 @@ export default function Dashboard() {
             {hasSubscriptionAccess ? (
               <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-3 py-1.5 text-sm font-medium text-emerald-700 dark:text-emerald-300">
                 <CheckCircle2 className="h-4 w-4" />
-                One-time subscription active: all courses unlocked.
+                All-course access is active. Enroll in courses to track your learning.
               </div>
             ) : (
               <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-amber-500/25 bg-amber-500/10 px-3 py-1.5 text-sm font-medium text-amber-700 dark:text-amber-300">
                 <Lock className="h-4 w-4" />
-                Free tier access includes modules 1 and 2; upgrade for full access.
+                Enroll in a course to track your learning. A plan unlocks every course and module.
               </div>
             )}
             
@@ -214,8 +232,8 @@ export default function Dashboard() {
                       <BookOpen className="w-6 h-6 text-primary" />
                     </div>
                     <div>
-                      <p className="text-2xl font-bold text-foreground">{unlockedCount}</p>
-                      <p className="text-sm text-muted-foreground">Courses Unlocked</p>
+                      <p className="text-2xl font-bold text-foreground">{enrolledCount}</p>
+                      <p className="text-sm text-muted-foreground">Courses Enrolled</p>
                     </div>
                   </div>
                 </CardContent>
@@ -282,9 +300,9 @@ export default function Dashboard() {
       <div className="mx-auto grid max-w-7xl gap-8 px-4 py-12 sm:px-6 lg:grid-cols-[minmax(0,1fr)_300px] lg:px-8">
         <main className="min-w-0">
         <div className="mb-8">
-          <h2 className="text-3xl font-bold text-foreground mb-2">Your Courses</h2>
+          <h2 className="text-3xl font-bold text-foreground mb-2">Your enrolled courses</h2>
           <p className="text-muted-foreground">
-            Continue learning and complete your modules across the learning catalog.
+            Your course progress is tracked after you enroll.
           </p>
         </div>
 
@@ -309,83 +327,127 @@ export default function Dashboard() {
             <p className="mt-1 text-sm text-muted-foreground">Check your connection and try again.</p>
             <Button variant="secondary" className="mt-4" onClick={() => refetch()}>Try again</Button>
           </div>
+        ) : enrolledCourses.length === 0 ? (
+          <div className="rounded-lg border border-dashed p-8 text-center">
+            <BookOpen className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
+            <p className="font-medium">You haven’t enrolled in a course yet.</p>
+            <p className="mt-1 text-sm text-muted-foreground">Explore the course catalog below and enroll to begin tracking your progress.</p>
+          </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {displayedCourses?.map((course) => (
-              <Card
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {enrolledCourses.map((course) => (
+              <StudentCourseCard
                 key={course.id}
-                className={`border-card-border overflow-hidden transition-all hover-elevate ${
-                  !course.isUnlocked ? "opacity-90" : ""
-                }`}
-              >
-                {/* Course Thumbnail */}
-                <div className="relative aspect-video overflow-hidden bg-gradient-to-br from-primary/20 to-accent/20">
-                  {course.thumbnail && (
-                    <img
-                      src={course.thumbnail}
-                      alt={course.title}
-                      className={`w-full h-full object-cover ${
-                        !course.isUnlocked ? "blur-sm" : ""
-                      }`}
-                    />
-                  )}
-                  {!course.isUnlocked && (
-                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                      <Lock className="w-12 h-12 text-white" />
-                    </div>
-                  )}
-                  {course.isUnlocked && course.progress !== undefined && (
-                    <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/60 to-transparent">
-                      <Progress value={course.progress} className="h-1.5" />
-                    </div>
-                  )}
-                </div>
-
-                <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <CardTitle className="text-xl">{course.title}</CardTitle>
-                    {canAccessCourse({ hasActiveSubscription: hasSubscriptionAccess, isUnlocked: course.isUnlocked }) ? (
-                      <Badge variant="secondary" className="shrink-0 text-xs">
-                        {course.progress === 100 ? "Completed" : course.progress ? "In progress" : "Not started"}
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline" className="shrink-0 text-xs">Locked</Badge>
-                    )}
-                  </div>
-                  <CardDescription className="text-sm leading-relaxed">
-                    {course.description}
-                  </CardDescription>
-                </CardHeader>
-
-                {course.isUnlocked && course.totalModules && (
-                  <CardContent className="pb-3">
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <CheckCircle2 className="w-4 h-4 text-chart-3" />
-                      <span>
-                        {course.completedModules} of {course.totalModules} modules completed
-                      </span>
-                    </div>
-                  </CardContent>
-                )}
-
-                <CardFooter className="pt-3">
-                  <Link href={`/course/${course.id}`} className="w-full">
-                    <Button className="w-full gap-2" data-testid={`button-continue-course-${course.id}`}>
-                      <Play className="w-4 h-4" />
-                      Continue Learning
-                    </Button>
-                  </Link>
-                </CardFooter>
-              </Card>
+                course={course}
+                onEnroll={() => enroll.mutate(course.id)}
+                isEnrolling={enroll.isPending}
+              />
             ))}
           </div>
         )}
+
+        <section className="mt-14">
+          <div className="mb-6">
+            <h2 className="text-2xl font-bold text-foreground">Explore courses</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Course access and enrollment are separate. A subscription unlocks content; enrolling adds the course to your learning dashboard.</p>
+          </div>
+          {isLoading ? (
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+              {[1, 2, 3].map((index) => <Skeleton key={index} className="h-72 w-full" />)}
+            </div>
+          ) : isError ? (
+            <p className="text-sm text-destructive">The course catalog could not be loaded.</p>
+          ) : catalogCourses.length === 0 ? (
+            <p className="text-sm text-muted-foreground">You’re enrolled in every available course.</p>
+          ) : (
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+              {catalogCourses.map((course) => (
+                <StudentCourseCard
+                  key={course.id}
+                  course={course}
+                  onEnroll={() => enroll.mutate(course.id)}
+                  isEnrolling={enroll.isPending}
+                />
+              ))}
+            </div>
+          )}
+        </section>
         </main>
 
         <DashboardSidebar leaderboard={leaderboard} />
       </div>
 
     </div>
+  );
+}
+
+function StudentCourseCard({
+  course,
+  onEnroll,
+  isEnrolling,
+}: {
+  course: CourseWithProgress;
+  onEnroll: () => void;
+  isEnrolling: boolean;
+}) {
+  return (
+    <Card className="overflow-hidden border-card-border transition-all hover-elevate">
+      <div className="relative aspect-video overflow-hidden bg-gradient-to-br from-primary/20 to-accent/20">
+        {course.thumbnail && (
+          <img src={course.thumbnail} alt="" className="h-full w-full object-cover" />
+        )}
+        {course.isEnrolled && (
+          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent p-3">
+            <Progress value={course.progress || 0} className="h-1.5" />
+          </div>
+        )}
+      </div>
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between gap-2">
+          <CardTitle className="text-xl">{course.title}</CardTitle>
+          <Badge variant={course.isEnrolled ? "secondary" : "outline"} className="shrink-0 text-xs">
+            {course.isEnrolled
+              ? course.progress === 100 ? "Completed" : course.progress ? "In progress" : "Enrolled"
+              : course.enrollmentMode === "self" ? "Open enrollment" : "Instructor enrollment"}
+          </Badge>
+        </div>
+        <CardDescription className="line-clamp-3 text-sm leading-relaxed">
+          {course.description}
+        </CardDescription>
+      </CardHeader>
+      {course.isEnrolled && (
+        <CardContent className="pb-3">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <CheckCircle2 className="h-4 w-4 text-chart-3" />
+            <span>{course.completedModules} of {course.totalModules} modules completed</span>
+          </div>
+        </CardContent>
+      )}
+      <CardFooter className="pt-3">
+        {course.isEnrolled ? (
+          <Link href={`/course/${course.id}`} className="w-full">
+            <Button className="w-full gap-2" data-testid={`button-continue-course-${course.id}`}>
+              <Play className="h-4 w-4" />
+              Continue learning
+            </Button>
+          </Link>
+        ) : course.enrollmentMode === "self" ? (
+          <Button
+            className="w-full gap-2"
+            onClick={onEnroll}
+            disabled={isEnrolling}
+            data-testid={`button-enroll-course-${course.id}`}
+          >
+            <BookOpen className="h-4 w-4" />
+            {isEnrolling ? "Enrolling..." : "Enroll"}
+          </Button>
+        ) : (
+          <Link href={`/course/${course.id}`} className="w-full">
+            <Button variant="outline" className="w-full">Contact instructor</Button>
+          </Link>
+        )}
+      </CardFooter>
+    </Card>
   );
 }
 

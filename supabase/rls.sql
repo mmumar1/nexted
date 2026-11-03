@@ -94,6 +94,7 @@ $$;
 alter table public.profiles enable row level security;
 alter table public.courses enable row level security;
 alter table public.user_courses enable row level security;
+alter table public.course_enrollments enable row level security;
 alter table public.modules enable row level security;
 alter table public.module_completions enable row level security;
 alter table public.quizzes enable row level security;
@@ -109,6 +110,10 @@ alter table public.event_notifications enable row level security;
 alter table public.course_conversations enable row level security;
 alter table public.course_messages enable row level security;
 alter table public.payments enable row level security;
+
+revoke insert, update, delete on public.user_courses from anon, authenticated;
+grant select on public.user_courses to authenticated;
+grant all on public.user_courses to service_role;
 
 -- Profiles
 create policy "Users can view their own profile"
@@ -262,26 +267,71 @@ with check (
 );
 
 -- User course enrollments
-create policy "Users can view their own enrollments"
+create policy "Users can view their own course access grants"
 on public.user_courses for select
 using (auth.uid() = user_id);
 
-create policy "Students can enroll themselves"
-on public.user_courses for insert
-with check (auth.uid() = user_id);
+create policy "Students can view their own course enrollments"
+on public.course_enrollments for select
+using (auth.uid() = user_id);
 
-create policy "Admins and instructors can manage course enrollments"
-on public.user_courses for all
+create policy "Students can enroll in published self-enrollment courses"
+on public.course_enrollments for insert
+with check (
+  auth.uid() = user_id
+  and exists (
+    select 1 from public.profiles p
+    where p.id = auth.uid() and p.role = 'student'
+  )
+  and exists (
+    select 1 from public.courses c
+    where c.id = course_id and c.is_published and c.enrollment_mode = 'self'
+  )
+);
+
+create policy "Staff can view course enrollments they manage"
+on public.course_enrollments for select
 using (
   exists (
-    select 1 from public.profiles p
-    where p.id = auth.uid() and p.role in ('instructor', 'admin', 'super_admin')
+    select 1
+    from public.profiles p
+    join public.courses c on c.id = course_id
+    where p.id = auth.uid()
+      and (
+        p.role in ('admin', 'super_admin')
+        or (p.role = 'instructor' and c.instructor_id = p.id)
+      )
+  )
+);
+
+create policy "Staff can manage course enrollments they own"
+on public.course_enrollments for all
+using (
+  exists (
+    select 1
+    from public.profiles p
+    join public.courses c on c.id = course_id
+    where p.id = auth.uid()
+      and (
+        p.role in ('admin', 'super_admin')
+        or (p.role = 'instructor' and c.instructor_id = p.id)
+      )
   )
 )
 with check (
   exists (
-    select 1 from public.profiles p
-    where p.id = auth.uid() and p.role in ('instructor', 'admin', 'super_admin')
+    select 1 from public.profiles enrolled_student
+    where enrolled_student.id = user_id and enrolled_student.role = 'student'
+  )
+  and exists (
+    select 1
+    from public.profiles p
+    join public.courses c on c.id = course_id
+    where p.id = auth.uid()
+      and (
+        p.role in ('admin', 'super_admin')
+        or (p.role = 'instructor' and c.instructor_id = p.id)
+      )
   )
 );
 
@@ -315,7 +365,31 @@ with check (
 create policy "Users can manage their own completion records"
 on public.module_completions for all
 using (auth.uid() = user_id)
-with check (auth.uid() = user_id);
+with check (
+  auth.uid() = user_id
+  and exists (
+    select 1
+    from public.modules m
+    join public.course_enrollments ce on ce.course_id = m.course_id
+    where m.id = module_id and ce.user_id = auth.uid()
+  )
+);
+
+create policy "Instructors can view course learner completions"
+on public.module_completions for select
+using (
+  exists (
+    select 1
+    from public.profiles p
+    join public.modules m on m.id = module_id
+    join public.courses c on c.id = m.course_id
+    where p.id = auth.uid()
+      and (
+        p.role in ('admin', 'super_admin')
+        or (p.role = 'instructor' and c.instructor_id = p.id)
+      )
+  )
+);
 
 -- Quizzes and attempts
 create policy "Authenticated users can see quizzes in enrolled courses"
@@ -347,7 +421,33 @@ with check (
 create policy "Users can manage their own quiz attempts"
 on public.quiz_attempts for all
 using (auth.uid() = user_id)
-with check (auth.uid() = user_id);
+with check (
+  auth.uid() = user_id
+  and exists (
+    select 1
+    from public.quizzes q
+    join public.modules m on m.id = q.module_id
+    join public.course_enrollments ce on ce.course_id = m.course_id
+    where q.id = quiz_id and ce.user_id = auth.uid()
+  )
+);
+
+create policy "Instructors can view course learner quiz attempts"
+on public.quiz_attempts for select
+using (
+  exists (
+    select 1
+    from public.profiles p
+    join public.quizzes q on q.id = quiz_id
+    join public.modules m on m.id = q.module_id
+    join public.courses c on c.id = m.course_id
+    where p.id = auth.uid()
+      and (
+        p.role in ('admin', 'super_admin')
+        or (p.role = 'instructor' and c.instructor_id = p.id)
+      )
+  )
+);
 
 -- Projects
 create policy "Users can view their own project submissions"

@@ -4,6 +4,25 @@ export interface ModuleLike {
   parentModuleId?: string | null;
 }
 
+export function isModuleWithinFreeTopLevelTier(
+  module: ModuleLike,
+  allModules: ModuleLike[],
+  freeTopLevelModuleCount = 1,
+): boolean {
+  const moduleById = new Map(allModules.map((item) => [item.id, item]));
+  let rootModule = module;
+  const visitedIds = new Set([module.id]);
+
+  while (rootModule.parentModuleId) {
+    const parent = moduleById.get(rootModule.parentModuleId);
+    if (!parent || visitedIds.has(parent.id)) break;
+    rootModule = parent;
+    visitedIds.add(parent.id);
+  }
+
+  return rootModule.order <= freeTopLevelModuleCount;
+}
+
 export function getModuleDisplayLabel(module: ModuleLike, allModules: ModuleLike[]) {
   if (!module.parentModuleId) {
     return `Module ${module.order}`;

@@ -183,15 +183,15 @@ begin
 		select 1 from public.quizzes q where q.module_id = v_css_id
 	);
 
-	insert into public.user_courses (user_id, course_id, access_source)
-	select p.id, v_course_id, 'manual'
+	insert into public.course_enrollments (user_id, course_id)
+	select p.id, v_course_id
 	from public.profiles p
 	where p.role = 'student'
 		and not exists (
 			select 1
-			from public.user_courses uc
-			where uc.user_id = p.id
-				and uc.course_id = v_course_id
+			from public.course_enrollments ce
+			where ce.user_id = p.id
+				and ce.course_id = v_course_id
 		);
 end;
 $$;
@@ -201,10 +201,10 @@ select
 	c.is_published,
 	count(distinct m.id) as modules,
 	count(distinct q.id) as quizzes,
-	count(distinct uc.user_id) as enrolled_students
+	count(distinct ce.user_id) as enrolled_students
 from public.courses c
 left join public.modules m on m.course_id = c.id
 left join public.quizzes q on q.module_id = m.id
-left join public.user_courses uc on uc.course_id = c.id
+left join public.course_enrollments ce on ce.course_id = c.id
 where c.access_code = 'WEB-201-DEMO'
 group by c.id, c.title, c.is_published;

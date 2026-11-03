@@ -17,6 +17,7 @@ import type {
   EventRsvpStatus,
   CourseConversationSummary,
   CourseMessage,
+  CourseEnrollment,
   InsertCbtAttempt,
   InsertCbtQuestion,
   InsertCourse,
@@ -238,6 +239,15 @@ function mapAttempt(row: DatabaseRow): QuizAttempt {
   };
 }
 
+function mapCourseEnrollment(row: DatabaseRow): CourseEnrollment {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    courseId: row.course_id,
+    enrolledAt: new Date(row.enrolled_at),
+  };
+}
+
 function mapProject(row: DatabaseRow): Project {
   return {
     id: row.id,
@@ -252,7 +262,13 @@ function mapProject(row: DatabaseRow): Project {
 }
 
 function mapUserCourse(row: DatabaseRow): UserCourse {
-  return { id: row.id, userId: row.user_id, courseId: row.course_id, unlockedAt: new Date(row.unlocked_at) };
+  return {
+    id: row.id,
+    userId: row.user_id,
+    courseId: row.course_id,
+    accessSource: row.access_source ?? "manual",
+    unlockedAt: new Date(row.unlocked_at),
+  };
 }
 
 export class SupabaseStorage implements IStorage {
@@ -398,6 +414,50 @@ export class SupabaseStorage implements IStorage {
 
   async removeEnrollment(userId: string, courseId: string) {
     const { error } = await this.client.from("user_courses").delete().eq("user_id", userId).eq("course_id", courseId);
+    if (error) throw new Error(error.message);
+    return true;
+  }
+
+  async getCourseEnrollments(courseId: string) {
+    const { data, error } = await this.client
+      .from("course_enrollments")
+      .select("*")
+      .eq("course_id", courseId)
+      .order("enrolled_at", { ascending: true });
+    return (required(data, error) ?? []).map(mapCourseEnrollment);
+  }
+
+  async getAllCourseEnrollments() {
+    const { data, error } = await this.client.from("course_enrollments").select("*");
+    return (required(data, error) ?? []).map(mapCourseEnrollment);
+  }
+
+  async enrollStudent(userId: string, courseId: string) {
+    const { data, error } = await this.client
+      .from("course_enrollments")
+      .upsert({ user_id: userId, course_id: courseId }, { onConflict: "user_id,course_id" })
+      .select("*")
+      .single();
+    return mapCourseEnrollment(required(data, error)!);
+  }
+
+  async isStudentEnrolled(userId: string, courseId: string) {
+    const { data, error } = await this.client
+      .from("course_enrollments")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("course_id", courseId)
+      .maybeSingle();
+    required(data, error);
+    return !!data;
+  }
+
+  async removeCourseEnrollment(userId: string, courseId: string) {
+    const { error } = await this.client
+      .from("course_enrollments")
+      .delete()
+      .eq("user_id", userId)
+      .eq("course_id", courseId);
     if (error) throw new Error(error.message);
     return true;
   }
@@ -993,6 +1053,15 @@ export class SupabaseStorage implements IStorage {
 
   async getQuizAttempts(userId: string, quizId: string) {
     const { data, error } = await this.client.from("quiz_attempts").select("*").eq("user_id", userId).eq("quiz_id", quizId).order("attempted_at", { ascending: false });
+    return (required(data, error) ?? []).map(mapAttempt);
+  }
+
+  async getQuizAttemptsForQuizzes(quizIds: string[]) {
+    if (quizIds.length === 0) return [];
+    const { data, error } = await this.client
+      .from("quiz_attempts")
+      .select("*")
+      .in("quiz_id", quizIds);
     return (required(data, error) ?? []).map(mapAttempt);
   }
 

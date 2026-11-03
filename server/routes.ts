@@ -26,7 +26,7 @@ import {
 } from "../shared/schema.js";
 import { z } from "zod";
 import { createSupabaseAdminClient, createSupabaseAuthClient } from "./supabase-admin.js";
-import { compareModuleOrder } from "../shared/module-utils.js";
+import { compareModuleOrder, isModuleWithinFreeTopLevelTier } from "../shared/module-utils.js";
 import { normalizeQuizQuestionIndex } from "../shared/quiz-utils.js";
 import { isValidTimeZone } from "../shared/event-utils.js";
 import { canAccessCourseConversation, canStartCourseConversation, isMessagingStaffRole } from "./messaging-utils.js";
@@ -210,7 +210,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const orderedModules = courseModules.sort((a, b) => compareModuleOrder(a, b, courseModules));
     const moduleIndex = orderedModules.findIndex((item) => item.id === module.id);
     if (moduleIndex < 0) return false;
-    if (moduleIndex >= 2) {
+    if (!isModuleWithinFreeTopLevelTier(module, orderedModules)) {
       const user = await storage.getUser(userId);
       const isStaff = user && ["admin", "super_admin", "superadmin", "instructor"].includes(user.role);
       if (!isStaff && !user?.hasActiveSubscription) return false;
@@ -259,9 +259,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/courses/:courseId/enroll", async (req, res) => {
+    try {
+      const student = await requireAuthenticatedStudent(req, res);
+      if (!student) return;
+      const courseId = z.string().uuid().parse(req.params.courseId);
+      const course = await storage.getCourse(courseId);
+      if (!course || !course.isPublished) return res.status(404).json({ error: "Course not found" });
+      if (course.enrollmentMode !== "self") {
+        return res.status(403).json({ error: "This course requires enrollment by its instructor." });
+      }
+
+      const enrollment = await storage.enrollStudent(student.id, course.id);
+      res.status(200).json(enrollment);
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
+      console.error("Failed to enroll student in course:", error);
+      res.status(500).json({ error: "Failed to enroll in course" });
+    }
+  });
+
   // User course routes (unlocking)
   app.get("/api/user-courses/:userId", async (req, res) => {
     try {
+      const requester = await requireAuthenticatedMessagingUser(req, res);
+      if (!requester) return;
+      if (requester.id !== req.params.userId) return res.status(403).json({ error: "You can only view your own course access." });
       const userCourses = await storage.getUserCourses(req.params.userId);
       res.json(userCourses);
     } catch (error) {
@@ -594,6 +617,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Failed to fetch course conversations:", error);
       res.status(500).json({ error: "Failed to fetch messages" });
+    }
+  });
+
+  app.get("/api/messages/courses", async (req, res) => {
+    try {
+      const student = await requireAuthenticatedStudent(req, res);
+      if (!student) return;
+
+      const courses = await storage.getAllCourses();
+      const directory = await Promise.all(courses
+        .filter((course) => canStartCourseConversation(student, course))
+        .map(async (course) => {
+          const instructor = course.instructorId
+            ? await storage.getUser(course.instructorId)
+            : undefined;
+          if (!instructor || !isMessagingStaffRole(instructor.role)) return null;
+
+          return {
+            id: course.id,
+            title: course.title,
+            instructorName: instructor.fullName,
+          };
+        }));
+
+      res.json(directory.filter((course) => course !== null));
+    } catch (error) {
+      console.error("Failed to fetch messageable courses:", error);
+      res.status(500).json({ error: "Failed to fetch courses for messaging" });
     }
   });
 
@@ -1691,40 +1742,181 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post("/api/admin/enrollments", async (req, res) => {
-    if (!(await requireAdmin(req.body.instructorId, res))) return;
-    const data = z.object({ userId: z.string(), courseId: z.string() }).parse(req.body);
-    const course = await storage.getCourse(data.courseId);
-    const student = await storage.getUser(data.userId);
-    if (!course || !student) return res.status(404).json({ error: "Course or student not found" });
-    if (await storage.isUserCourseUnlocked(data.userId, data.courseId)) {
-      return res.status(400).json({ error: "Student is already enrolled" });
+    const requester = await requireAuthenticatedStaff(req, res);
+    if (!requester) return;
+    try {
+      const data = z.object({ userId: z.string().uuid(), courseId: z.string().uuid() }).parse(req.body);
+      const course = await storage.getCourse(data.courseId);
+      const student = await storage.getUser(data.userId);
+      if (!course || !student || student.role !== "student") {
+        return res.status(404).json({ error: "Course or student not found" });
+      }
+      if (!isSuperAdmin(requester.role) && course.instructorId !== requester.id) {
+        return res.status(403).json({ error: "You can only manage enrollment for your assigned courses." });
+      }
+      res.json(await storage.enrollStudent(data.userId, data.courseId));
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
+      console.error("Failed to enroll student:", error);
+      res.status(500).json({ error: "Failed to enroll student" });
     }
-    res.json(await storage.unlockCourse({ userId: data.userId, courseId: data.courseId }));
   });
 
   app.delete("/api/admin/enrollments", async (req, res) => {
-    if (!(await requireAdmin(req.query.adminId, res))) return;
-    const data = z.object({ userId: z.string(), courseId: z.string() }).parse(req.body);
-    res.json({ removed: await storage.removeEnrollment(data.userId, data.courseId) });
+    const requester = await requireAuthenticatedStaff(req, res);
+    if (!requester) return;
+    try {
+      const data = z.object({ userId: z.string().uuid(), courseId: z.string().uuid() }).parse(req.body);
+      const course = await storage.getCourse(data.courseId);
+      if (!course) return res.status(404).json({ error: "Course not found" });
+      if (!isSuperAdmin(requester.role) && course.instructorId !== requester.id) {
+        return res.status(403).json({ error: "You can only manage enrollment for your assigned courses." });
+      }
+      res.json({ removed: await storage.removeCourseEnrollment(data.userId, data.courseId) });
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
+      console.error("Failed to remove course enrollment:", error);
+      res.status(500).json({ error: "Failed to remove enrollment" });
+    }
+  });
+
+  app.get("/api/admin/courses/:courseId/progress", async (req, res) => {
+    try {
+      const requester = await requireAuthenticatedStaff(req, res);
+      if (!requester) return;
+      const courseId = z.string().uuid().parse(req.params.courseId);
+      const course = await storage.getCourse(courseId);
+      if (!course) return res.status(404).json({ error: "Course not found" });
+      if (!isSuperAdmin(requester.role) && course.instructorId !== requester.id) {
+        return res.status(403).json({ error: "You can only view progress for your assigned courses." });
+      }
+
+      const [enrollments, modules] = await Promise.all([
+        storage.getCourseEnrollments(courseId),
+        storage.getModulesByCourse(courseId),
+      ]);
+      const quizzes = await Promise.all(modules.map((module) => storage.getQuizByModule(module.id)));
+      const quizByModuleId = new Map(
+        quizzes.filter((quiz) => quiz).map((quiz) => [quiz!.moduleId, quiz!]),
+      );
+      const attempts = await storage.getQuizAttemptsForQuizzes(
+        Array.from(quizByModuleId.keys()),
+      );
+      const moduleByQuizId = new Map(
+        Array.from(quizByModuleId.values()).map((quiz) => [quiz.id, quiz.moduleId]),
+      );
+      const courseAttempts = attempts.filter((attempt) => moduleByQuizId.has(attempt.quizId));
+
+      const learners = await Promise.all(enrollments.map(async (enrollment) => {
+        const student = await storage.getUser(enrollment.userId);
+        if (!student || student.role !== "student") return null;
+        const [completions, passedQuizModuleIds] = await Promise.all([
+          storage.getModuleCompletions(student.id, courseId),
+          storage.getPassedQuizModuleIds(student.id, courseId),
+        ]);
+        const completionByModuleId = new Map(completions.map((completion) => [completion.moduleId, completion]));
+        const studentAttempts = courseAttempts.filter((attempt) => attempt.userId === student.id);
+        const latestAttemptByModuleId = new Map<string, typeof studentAttempts[number]>();
+        for (const attempt of studentAttempts) {
+          const moduleId = moduleByQuizId.get(attempt.quizId);
+          if (!moduleId) continue;
+          const existing = latestAttemptByModuleId.get(moduleId);
+          if (!existing || attempt.attemptedAt > existing.attemptedAt) {
+            latestAttemptByModuleId.set(moduleId, attempt);
+          }
+        }
+
+        const learnerModules = modules.map((module) => {
+          const completion = completionByModuleId.get(module.id);
+          const quiz = quizByModuleId.get(module.id);
+          const latestAttempt = latestAttemptByModuleId.get(module.id);
+          return {
+            id: module.id,
+            title: module.title,
+            order: module.order,
+            parentModuleId: module.parentModuleId,
+            isCompleted: !!completion,
+            completedAt: completion?.completedAt ?? null,
+            hasQuiz: !!quiz,
+            isQuizPassed: passedQuizModuleIds.has(module.id),
+            latestQuizScore: latestAttempt?.score ?? null,
+            latestQuizTotal: latestAttempt?.totalQuestions ?? null,
+            latestQuizPassed: latestAttempt?.passed ?? null,
+            latestQuizAt: latestAttempt?.attemptedAt ?? null,
+          };
+        });
+        const completedCount = learnerModules.filter((module) => module.isCompleted).length;
+        const activityDates = [
+          ...completions.map((completion) => completion.completedAt),
+          ...studentAttempts.map((attempt) => attempt.attemptedAt),
+        ];
+        const lastActivityAt = activityDates.length
+          ? activityDates.reduce((latest, date) => date > latest ? date : latest)
+          : null;
+
+        return {
+          id: student.id,
+          fullName: student.fullName,
+          email: student.email,
+          enrolledAt: enrollment.enrolledAt,
+          progress: learnerModules.length ? Math.round((completedCount / learnerModules.length) * 100) : 0,
+          completedModules: completedCount,
+          totalModules: learnerModules.length,
+          lastActivityAt,
+          modules: learnerModules,
+        };
+      }));
+
+      res.json({
+        course: { id: course.id, title: course.title },
+        learners: learners.filter((learner) => learner !== null),
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
+      console.error("Failed to fetch course learner progress:", error);
+      res.status(500).json({ error: "Failed to fetch course progress" });
+    }
   });
 
   app.post("/api/admin/progress/reset", async (req, res) => {
-    if (!(await requireAdmin(req.body.adminId, res))) return;
-    const data = z.object({ userId: z.string(), courseId: z.string().optional() }).parse(req.body);
-    await storage.resetUserProgress(data.userId, data.courseId);
-    res.json({ reset: true });
+    const requester = await requireAuthenticatedStaff(req, res);
+    if (!requester) return;
+    try {
+      const data = z.object({ userId: z.string().uuid(), courseId: z.string().uuid().optional() }).parse(req.body);
+      if (!data.courseId && !isSuperAdmin(requester.role)) {
+        return res.status(403).json({ error: "Instructors can only reset progress for a course they teach." });
+      }
+      if (data.courseId) {
+        const course = await storage.getCourse(data.courseId);
+        if (!course) return res.status(404).json({ error: "Course not found" });
+        if (!isSuperAdmin(requester.role) && course.instructorId !== requester.id) {
+          return res.status(403).json({ error: "You can only reset progress for your assigned courses." });
+        }
+      }
+      await storage.resetUserProgress(data.userId, data.courseId);
+      res.json({ reset: true });
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
+      console.error("Failed to reset learner progress:", error);
+      res.status(500).json({ error: "Failed to reset progress" });
+    }
   });
 
   app.get("/api/admin/analytics", async (req, res) => {
     if (!(await requireAdmin(req.query.userId, res))) return;
-    const [courses, users, attempts] = await Promise.all([storage.getAllCourses(), storage.getAllUsers(), storage.getAllQuizAttempts()]);
+    const [courses, users, attempts, allEnrollments] = await Promise.all([
+      storage.getAllCourses(),
+      storage.getAllUsers(),
+      storage.getAllQuizAttempts(),
+      storage.getAllCourseEnrollments(),
+    ]);
     const courseStats = await Promise.all(courses.map(async (course) => {
       const modules = await storage.getModulesByCourse(course.id);
-      const enrollments = (await Promise.all(users.map((user) => storage.getUserCourses(user.id)))).flat().filter((item) => item.courseId === course.id);
+      const enrollments = allEnrollments.filter((item) => item.courseId === course.id);
       const completed = (await Promise.all(enrollments.map((item) => storage.getModuleCompletions(item.userId, course.id)))).flat();
       return { id: course.id, title: course.title, enrollments: enrollments.length, completionRate: modules.length && enrollments.length ? Math.round((completed.length / (modules.length * enrollments.length)) * 100) : 0 };
     }));
-    res.json({ totalUsers: users.length, totalCourses: courses.length, totalEnrollments: (await Promise.all(users.map((user) => storage.getUserCourses(user.id)))).flat().length, quizAttempts: attempts.length, passedQuizzes: attempts.filter((attempt) => attempt.passed).length, courseStats });
+    res.json({ totalUsers: users.length, totalCourses: courses.length, totalEnrollments: allEnrollments.length, quizAttempts: attempts.length, passedQuizzes: attempts.filter((attempt) => attempt.passed).length, courseStats });
   });
 
   // Module routes
@@ -1758,6 +1950,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Module completion routes
   app.get("/api/module-completions/:userId/:courseId", async (req, res) => {
     try {
+      const requester = await requireAuthenticatedMessagingUser(req, res);
+      if (!requester) return;
+      if (requester.id !== req.params.userId) return res.status(403).json({ error: "You can only view your own progress." });
       const completions = await storage.getModuleCompletions(
         req.params.userId,
         req.params.courseId,
@@ -1771,9 +1966,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/module-completions", async (req, res) => {
     try {
       const data = insertModuleCompletionSchema.parse(req.body);
+      const student = await requireAuthenticatedStudent(req, res);
+      if (!student) return;
+      if (student.id !== data.userId) return res.status(403).json({ error: "You can only update your own progress." });
       const module = await storage.getModule(data.moduleId);
       if (!module) {
         return res.status(404).json({ error: "Module not found" });
+      }
+      if (!(await storage.isStudentEnrolled(student.id, module.courseId))) {
+        return res.status(403).json({ error: "Enroll in this course before recording progress." });
       }
 
       if (!(await canAccessModule(data.userId, module))) {
@@ -1846,6 +2047,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Quiz attempt routes
   app.get("/api/quiz-attempts/:userId/:quizId", async (req, res) => {
     try {
+      const requester = await requireAuthenticatedMessagingUser(req, res);
+      if (!requester) return;
+      if (requester.id !== req.params.userId) return res.status(403).json({ error: "You can only view your own quiz attempts." });
       const attempts = await storage.getQuizAttempts(
         req.params.userId,
         req.params.quizId,
@@ -1859,6 +2063,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/quiz-attempts", async (req, res) => {
     try {
       const data = insertQuizAttemptSchema.parse(req.body);
+      const student = await requireAuthenticatedStudent(req, res);
+      if (!student) return;
+      if (student.id !== data.userId) return res.status(403).json({ error: "You can only submit your own quiz attempts." });
       const quiz = await storage.getQuiz(data.quizId);
       if (!quiz) {
         return res.status(404).json({ error: "Quiz not found" });
@@ -1866,6 +2073,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const module = await storage.getModule(quiz.moduleId);
       if (!module) return res.status(404).json({ error: "Module not found" });
+      if (!(await storage.isStudentEnrolled(student.id, module.courseId))) {
+        return res.status(403).json({ error: "Enroll in this course before taking its quizzes." });
+      }
       if (!(await canAccessModule(data.userId, module))) {
         return res.status(403).json({ error: "Complete the previous module and its quiz, if present, first" });
       }
@@ -1886,6 +2096,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/quiz-progress/:userId/:courseId", async (req, res) => {
     try {
+      const requester = await requireAuthenticatedMessagingUser(req, res);
+      if (!requester) return;
+      if (requester.id !== req.params.userId) return res.status(403).json({ error: "You can only view your own quiz progress." });
       const passedModuleIds = await storage.getPassedQuizModuleIds(req.params.userId, req.params.courseId);
       res.json({ passedModuleIds: Array.from(passedModuleIds) });
     } catch (error) {
@@ -1895,6 +2108,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/dashboard/:userId/leaderboard", async (req, res) => {
     try {
+      const requester = await requireAuthenticatedMessagingUser(req, res);
+      if (!requester) return;
+      if (requester.id !== req.params.userId) return res.status(403).json({ error: "You can only view your own leaderboard status." });
       const attempts = (await storage.getAllQuizAttempts()).filter((attempt) => attempt.userId === req.params.userId);
       const totalQuestions = attempts.reduce((sum, attempt) => sum + attempt.totalQuestions, 0);
       const totalCorrect = attempts.reduce((sum, attempt) => sum + attempt.score, 0);
@@ -1956,16 +2172,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/dashboard/:userId", async (req, res) => {
     try {
       const userId = req.params.userId;
+      const requester = await requireAuthenticatedMessagingUser(req, res);
+      if (!requester) return;
+      if (requester.id !== userId) return res.status(403).json({ error: "You can only view your own dashboard." });
       
       const allCourses = await storage.getAllCourses();
-      const user = await storage.getUser(userId);
-      const isStaff = user ? ["admin", "super_admin", "superadmin", "instructor"].includes(user.role) : false;
-      const visibleCourses = allCourses.filter((course) => course.isPublished || isStaff);
+      const visibleCourses = allCourses.filter((course) => course.isPublished);
 
       const coursesWithProgress = await Promise.all(
         visibleCourses.map(async (course) => {
+          const isEnrolled = await storage.isStudentEnrolled(userId, course.id);
           const modules = await storage.getModulesByCourse(course.id);
-          const completions = await storage.getModuleCompletions(userId, course.id);
+          const completions = isEnrolled ? await storage.getModuleCompletions(userId, course.id) : [];
           const completedModules = completions.length;
           const totalModules = modules.length;
           const progress = totalModules > 0 ? Math.round((completedModules / totalModules) * 100) : 0;
@@ -1973,8 +2191,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return {
             ...course,
             isUnlocked: true,
+            isEnrolled,
             progress,
-            totalModules,
+            totalModules: isEnrolled ? totalModules : 0,
             completedModules,
           };
         }),

@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/lib/auth-context";
@@ -21,8 +22,9 @@ import type { CbtExamType, Course, EventRecord, Module, QuizQuestion, User } fro
 import { Archive, BarChart3, BookOpen, CalendarDays, ClipboardList, CreditCard, Download, FileQuestion, FileUp, LayoutDashboard, Pencil, Plus, RotateCcw, Send, Settings2, Trash2, UserRound, Users, X } from "lucide-react";
 import { isInitialEmptyQuizQuestion, parseQuizCsv, type QuizCsvPreview } from "@/lib/quiz-csv";
 import { formatDateTimeForZone, localDateTimeToUtc } from "@shared/event-utils";
+import { getModuleDisplayLabel } from "@shared/module-utils";
 
-type Section = "overview" | "courses" | "modules" | "quizzes" | "events" | "cbt" | "users" | "enrollments" | "analytics" | "announcements" | "payments";
+type Section = "overview" | "courses" | "modules" | "quizzes" | "events" | "cbt" | "users" | "enrollments" | "progress" | "analytics" | "announcements" | "payments";
 
 interface QuizRecord {
   id: string;
@@ -67,6 +69,36 @@ interface Analytics {
   quizAttempts: number;
   passedQuizzes: number;
   courseStats: Array<{ id: string; title: string; enrollments: number; completionRate: number }>;
+}
+
+interface CourseLearnerProgress {
+  id: string;
+  fullName: string;
+  email: string;
+  enrolledAt: string;
+  progress: number;
+  completedModules: number;
+  totalModules: number;
+  lastActivityAt: string | null;
+  modules: Array<{
+    id: string;
+    title: string;
+    order: number;
+    parentModuleId: string | null;
+    isCompleted: boolean;
+    completedAt: string | null;
+    hasQuiz: boolean;
+    isQuizPassed: boolean;
+    latestQuizScore: number | null;
+    latestQuizTotal: number | null;
+    latestQuizPassed: boolean | null;
+    latestQuizAt: string | null;
+  }>;
+}
+
+interface CourseProgressResponse {
+  course: { id: string; title: string };
+  learners: CourseLearnerProgress[];
 }
 
 interface ManualPaymentSubmission {
@@ -127,6 +159,7 @@ const navItems: Array<{ id: Section; label: string; icon: typeof LayoutDashboard
   { id: "cbt", label: "CBT question bank", icon: ClipboardList },
   { id: "users", label: "Users", icon: UserRound },
   { id: "enrollments", label: "Enrollments", icon: Users },
+  { id: "progress", label: "Learner progress", icon: BarChart3 },
   { id: "analytics", label: "Analytics", icon: BarChart3 },
   { id: "announcements", label: "Announcements", icon: Plus },
   { id: "payments", label: "Payments", icon: CreditCard },
@@ -135,7 +168,7 @@ const navItems: Array<{ id: Section; label: string; icon: typeof LayoutDashboard
 const isStaffRole = (role?: string | null) => ["admin", "super_admin", "instructor"].includes(role || "");
 const isSuperAdmin = (role?: string | null) => ["admin", "super_admin", "superadmin"].includes(role || "");
 const canReviewPayments = (role?: string | null) => role === "super_admin";
-const sections = new Set<Section>(["overview", "courses", "modules", "quizzes", "events", "cbt", "users", "enrollments", "analytics", "announcements", "payments"]);
+const sections = new Set<Section>(["overview", "courses", "modules", "quizzes", "events", "cbt", "users", "enrollments", "progress", "analytics", "announcements", "payments"]);
 
 function createEmptyQuizQuestion(): QuizQuestionDraft {
   return { id: crypto.randomUUID(), question: "", questionImageUrl: "", explanation: "", explanationImageUrl: "", options: ["", "", "", ""], correctAnswer: "1" };
@@ -308,6 +341,12 @@ export default function AdminCms() {
     enabled: canManage && section === "analytics",
   });
 
+  const learnerProgress = useQuery<CourseProgressResponse>({
+    queryKey: ["/api/admin/courses", selectedCourseId, "progress"],
+    queryFn: () => apiRequest("GET", `/api/admin/courses/${selectedCourseId}/progress`),
+    enabled: canManage && section === "progress" && !!selectedCourseId,
+  });
+
   const manualPayments = useQuery<ManualPaymentSubmission[]>({
     queryKey: ["/api/admin/manual-payments"],
     enabled: canReviewPayments(user?.role) && section === "payments",
@@ -461,6 +500,8 @@ export default function AdminCms() {
   const enroll = useMutation({
     mutationFn: () => apiRequest("POST", "/api/admin/enrollments", { instructorId: user?.id, ...enrollment }),
     onSuccess: () => {
+      invalidate(["/api/admin/courses", enrollment.courseId, "progress"]);
+      invalidate(["/api/admin/analytics", adminId]);
       setEnrollment({ userId: "", courseId: "" });
       toast({ title: "Student enrolled" });
     },
@@ -475,7 +516,11 @@ export default function AdminCms() {
 
   const removeEnrollment = useMutation({
     mutationFn: () => apiRequest("DELETE", "/api/admin/enrollments", { userId: enrollment.userId, courseId: enrollment.courseId, adminId: user?.id }),
-    onSuccess: () => toast({ title: "Enrollment removed" }),
+    onSuccess: () => {
+      invalidate(["/api/admin/courses", enrollment.courseId, "progress"]);
+      invalidate(["/api/admin/analytics", adminId]);
+      toast({ title: "Enrollment removed" });
+    },
     onError: (error: Error) => toast({ title: "Remove enrollment failed", description: error.message, variant: "destructive" }),
   });
 
@@ -823,6 +868,17 @@ export default function AdminCms() {
               onEnroll={() => enroll.mutate()}
               onRemove={() => removeEnrollment.mutate()}
               onReset={() => resetProgress.mutate()}
+            />
+          )}
+
+          {section === "progress" && (
+            <LearnerProgressPanel
+              courses={courses.data || []}
+              selectedCourseId={selectedCourseId}
+              onCourseChange={setSelectedCourseId}
+              data={learnerProgress.data}
+              isLoading={learnerProgress.isLoading}
+              isError={learnerProgress.isError}
             />
           )}
 
@@ -1977,7 +2033,7 @@ function EnrollmentPanel({ users, courses, value, setValue, onEnroll, onRemove, 
     <Card>
       <CardHeader>
         <CardTitle>Enrollment management</CardTitle>
-        <CardDescription>Assign or remove students from restricted courses and reset their progress.</CardDescription>
+        <CardDescription>Enroll or remove students without changing their subscription or course content access. Progress history is kept when enrollment is removed.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid gap-4 md:grid-cols-2">
@@ -2007,6 +2063,127 @@ function EnrollmentPanel({ users, courses, value, setValue, onEnroll, onRemove, 
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function LearnerProgressPanel({
+  courses,
+  selectedCourseId,
+  onCourseChange,
+  data,
+  isLoading,
+  isError,
+}: {
+  courses: Course[];
+  selectedCourseId: string;
+  onCourseChange: (courseId: string) => void;
+  data?: CourseProgressResponse;
+  isLoading: boolean;
+  isError: boolean;
+}) {
+  const [search, setSearch] = useState("");
+  const normalizedSearch = search.trim().toLocaleLowerCase();
+  const learners = (data?.learners ?? []).filter((learner) =>
+    `${learner.fullName} ${learner.email}`.toLocaleLowerCase().includes(normalizedSearch)
+  );
+
+  return (
+    <div className="space-y-5">
+      <Card>
+        <CardHeader>
+          <CardTitle>Individual course progress</CardTitle>
+          <CardDescription>
+            Enrollment is separate from all-course access. Only enrolled students appear here; lesson completion and quiz results are shown independently.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 sm:grid-cols-2">
+          <CourseSelect courses={courses} value={selectedCourseId} onChange={onCourseChange} />
+          <Field label="Search enrolled learners">
+            <Input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Name or email"
+            />
+          </Field>
+        </CardContent>
+      </Card>
+
+      {isLoading ? (
+        <Card><CardContent className="p-8 text-center text-muted-foreground">Loading learner progress...</CardContent></Card>
+      ) : isError ? (
+        <Card><CardContent className="p-8 text-center text-destructive">Learner progress could not be loaded.</CardContent></Card>
+      ) : !selectedCourseId ? (
+        <Card><CardContent className="p-8 text-center text-muted-foreground">Choose a course to view its enrolled learners.</CardContent></Card>
+      ) : learners.length === 0 ? (
+        <Card><CardContent className="p-8 text-center text-muted-foreground">
+          {normalizedSearch ? "No enrolled learners match your search." : "No students are enrolled in this course yet."}
+        </CardContent></Card>
+      ) : (
+        <Card>
+          <CardHeader>
+            <CardTitle>{data?.course.title || "Enrolled learners"}</CardTitle>
+            <CardDescription>{learners.length} enrolled {learners.length === 1 ? "learner" : "learners"}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Accordion type="single" collapsible className="divide-y">
+              {learners.map((learner) => (
+                <AccordionItem key={learner.id} value={learner.id} className="border-0">
+                  <AccordionTrigger className="gap-4 py-4 hover:no-underline">
+                    <span className="min-w-0 flex-1 text-left">
+                      <span className="block truncate font-semibold">{learner.fullName}</span>
+                      <span className="mt-1 block truncate text-sm font-normal text-muted-foreground">{learner.email}</span>
+                      <span className="mt-2 flex items-center gap-2">
+                        <Progress value={learner.progress} className="h-2 flex-1" />
+                        <span className="shrink-0 text-xs text-muted-foreground">{learner.progress}%</span>
+                      </span>
+                    </span>
+                    <Badge variant="outline" className="hidden shrink-0 sm:inline-flex">
+                      {learner.completedModules}/{learner.totalModules} modules
+                    </Badge>
+                  </AccordionTrigger>
+                  <AccordionContent className="pb-5">
+                    <div className="mb-4 grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
+                      <p>Enrolled {new Date(learner.enrolledAt).toLocaleDateString()}</p>
+                      <p>
+                        Last learning activity: {learner.lastActivityAt
+                          ? new Date(learner.lastActivityAt).toLocaleString()
+                          : "No activity recorded"}
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      {learner.modules.map((module) => (
+                        <div key={module.id} className="rounded-lg border p-3">
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div>
+                              <p className="text-xs text-muted-foreground">{getModuleDisplayLabel(module, learner.modules)}</p>
+                              <p className="font-medium">{module.title}</p>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              <Badge variant={module.isCompleted ? "secondary" : "outline"}>
+                                {module.isCompleted ? "Completed" : "Not completed"}
+                              </Badge>
+                              {module.hasQuiz && (
+                                <Badge variant={module.isQuizPassed ? "secondary" : "outline"}>
+                                  {module.isQuizPassed
+                                    ? `Quiz passed${module.latestQuizScore !== null && module.latestQuizTotal ? ` · ${module.latestQuizScore}/${module.latestQuizTotal}` : ""}`
+                                    : module.latestQuizScore !== null && module.latestQuizTotal
+                                      ? `Latest quiz ${module.latestQuizScore}/${module.latestQuizTotal}`
+                                      : "Quiz not passed"}
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+              ))}
+            </Accordion>
+          </CardContent>
+        </Card>
+      )}
+    </div>
   );
 }
 

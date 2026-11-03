@@ -46,6 +46,17 @@ create table public.user_courses (
   unique (user_id, course_id)
 );
 
+create table public.course_enrollments (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  course_id uuid not null references public.courses(id) on delete cascade,
+  enrolled_at timestamptz not null default now(),
+  unique (user_id, course_id)
+);
+
+create index idx_course_enrollments_course on public.course_enrollments(course_id, enrolled_at);
+create index idx_course_enrollments_user on public.course_enrollments(user_id, enrolled_at);
+
 create table public.modules (
   id uuid primary key default gen_random_uuid(),
   course_id uuid not null references public.courses(id) on delete cascade,

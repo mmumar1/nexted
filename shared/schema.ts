@@ -73,17 +73,29 @@ export const insertCourseSchema = createInsertSchema(courses).omit({ id: true })
 export type InsertCourse = z.infer<typeof insertCourseSchema>;
 export type Course = typeof courses.$inferSelect;
 
-// User course access table (many-to-many)
+// Course content access grants; participation is tracked separately in course_enrollments.
 export const userCourses = pgTable("user_courses", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull(),
   courseId: varchar("course_id").notNull(),
+  accessSource: text("access_source").notNull().default("manual"),
   unlockedAt: timestamp("unlocked_at").notNull().defaultNow(),
 });
 
 export const insertUserCourseSchema = createInsertSchema(userCourses).omit({ id: true, unlockedAt: true });
 export type InsertUserCourse = z.infer<typeof insertUserCourseSchema>;
 export type UserCourse = typeof userCourses.$inferSelect;
+
+export const courseEnrollments = pgTable("course_enrollments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  courseId: varchar("course_id").notNull(),
+  enrolledAt: timestamp("enrolled_at").notNull().defaultNow(),
+});
+
+export const insertCourseEnrollmentSchema = createInsertSchema(courseEnrollments).omit({ id: true, enrolledAt: true });
+export type InsertCourseEnrollment = z.infer<typeof insertCourseEnrollmentSchema>;
+export type CourseEnrollment = typeof courseEnrollments.$inferSelect;
 
 // Modules table
 export const modules = pgTable("modules", {

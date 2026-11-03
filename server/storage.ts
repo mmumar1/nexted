@@ -5,6 +5,7 @@ import {
   type InsertCourse,
   type UserCourse,
   type InsertUserCourse,
+  type CourseEnrollment,
   type Module,
   type InsertModule,
   type ModuleCompletion,
@@ -56,6 +57,11 @@ export interface IStorage {
   unlockCourse(data: InsertUserCourse): Promise<UserCourse>;
   isUserCourseUnlocked(userId: string, courseId: string): Promise<boolean>;
   removeEnrollment(userId: string, courseId: string): Promise<boolean>;
+  getCourseEnrollments(courseId: string): Promise<CourseEnrollment[]>;
+  getAllCourseEnrollments(): Promise<CourseEnrollment[]>;
+  enrollStudent(userId: string, courseId: string): Promise<CourseEnrollment>;
+  isStudentEnrolled(userId: string, courseId: string): Promise<boolean>;
+  removeCourseEnrollment(userId: string, courseId: string): Promise<boolean>;
   resetUserProgress(userId: string, courseId?: string): Promise<void>;
 
   // Modules
@@ -116,6 +122,7 @@ export interface IStorage {
 
   // Quiz Attempts
   getQuizAttempts(userId: string, quizId: string): Promise<QuizAttempt[]>;
+  getQuizAttemptsForQuizzes(quizIds: string[]): Promise<QuizAttempt[]>;
   createQuizAttempt(attempt: InsertQuizAttempt): Promise<QuizAttempt>;
   getAllQuizAttempts(): Promise<QuizAttempt[]>;
 
@@ -129,6 +136,7 @@ export class MemStorage implements IStorage {
   private users: Map<string, User>;
   private courses: Map<string, Course>;
   private userCourses: Map<string, UserCourse>;
+  private courseEnrollments: Map<string, CourseEnrollment>;
   private modules: Map<string, Module>;
   private moduleCompletions: Map<string, ModuleCompletion>;
   private quizzes: Map<string, Quiz>;
@@ -147,6 +155,7 @@ export class MemStorage implements IStorage {
     this.users = new Map();
     this.courses = new Map();
     this.userCourses = new Map();
+    this.courseEnrollments = new Map();
     this.modules = new Map();
     this.moduleCompletions = new Map();
     this.quizzes = new Map();
@@ -526,7 +535,7 @@ export class MemStorage implements IStorage {
 
   async unlockCourse(data: InsertUserCourse): Promise<UserCourse> {
     const id = randomUUID();
-    const userCourse: UserCourse = { ...data, id, unlockedAt: new Date() };
+    const userCourse: UserCourse = { ...data, accessSource: data.accessSource ?? "manual", id, unlockedAt: new Date() };
     this.userCourses.set(id, userCourse);
     return userCourse;
   }
@@ -540,6 +549,42 @@ export class MemStorage implements IStorage {
   async removeEnrollment(userId: string, courseId: string): Promise<boolean> {
     const enrollment = Array.from(this.userCourses.entries()).find(([, item]) => item.userId === userId && item.courseId === courseId);
     return enrollment ? this.userCourses.delete(enrollment[0]) : false;
+  }
+
+  async getCourseEnrollments(courseId: string): Promise<CourseEnrollment[]> {
+    return Array.from(this.courseEnrollments.values()).filter((item) => item.courseId === courseId);
+  }
+
+  async getAllCourseEnrollments(): Promise<CourseEnrollment[]> {
+    return Array.from(this.courseEnrollments.values());
+  }
+
+  async enrollStudent(userId: string, courseId: string): Promise<CourseEnrollment> {
+    const existing = Array.from(this.courseEnrollments.values()).find(
+      (item) => item.userId === userId && item.courseId === courseId,
+    );
+    if (existing) return existing;
+    const enrollment: CourseEnrollment = {
+      id: randomUUID(),
+      userId,
+      courseId,
+      enrolledAt: new Date(),
+    };
+    this.courseEnrollments.set(enrollment.id, enrollment);
+    return enrollment;
+  }
+
+  async isStudentEnrolled(userId: string, courseId: string): Promise<boolean> {
+    return Array.from(this.courseEnrollments.values()).some(
+      (item) => item.userId === userId && item.courseId === courseId,
+    );
+  }
+
+  async removeCourseEnrollment(userId: string, courseId: string): Promise<boolean> {
+    const enrollment = Array.from(this.courseEnrollments.entries()).find(
+      ([, item]) => item.userId === userId && item.courseId === courseId,
+    );
+    return enrollment ? this.courseEnrollments.delete(enrollment[0]) : false;
   }
 
   async resetUserProgress(userId: string, courseId?: string): Promise<void> {
@@ -1074,6 +1119,11 @@ export class MemStorage implements IStorage {
     return Array.from(this.quizAttempts.values())
       .filter((qa) => qa.userId === userId && qa.quizId === quizId)
       .sort((a, b) => b.attemptedAt.getTime() - a.attemptedAt.getTime());
+  }
+
+  async getQuizAttemptsForQuizzes(quizIds: string[]): Promise<QuizAttempt[]> {
+    const quizIdSet = new Set(quizIds);
+    return Array.from(this.quizAttempts.values()).filter((attempt) => quizIdSet.has(attempt.quizId));
   }
 
   async createQuizAttempt(insertAttempt: InsertQuizAttempt): Promise<QuizAttempt> {

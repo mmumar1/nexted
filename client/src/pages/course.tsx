@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useRoute, useLocation } from "wouter";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Navbar } from "@/components/navbar";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,7 @@ export default function CoursePage() {
   const [, moduleParams] = useRoute("/course/:courseId/module/:moduleId");
   const [, setLocation] = useLocation();
   const { user, isAuthenticated } = useAuth();
+  const queryClient = useQueryClient();
   const { toast } = useToast();
   const [isModuleSheetOpen, setModuleSheetOpen] = useState(false);
   const [showSubscriptionPrompt, setShowSubscriptionPrompt] = useState(false);
@@ -55,9 +56,21 @@ export default function CoursePage() {
     enabled: !!user?.id && !!courseId,
   });
 
-  const { data: dashboardCourses } = useQuery<Array<{ id: string; isUnlocked: boolean }>>({
+  const { data: dashboardCourses } = useQuery<Array<{ id: string; isUnlocked: boolean; isEnrolled: boolean; enrollmentMode: "self" | "restricted" }>>({
     queryKey: ["/api/dashboard", user?.id],
     enabled: !!user?.id,
+  });
+  const enrollInCourse = useMutation({
+    mutationFn: () => apiRequest("POST", `/api/courses/${courseId}/enroll`),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["/api/dashboard", user?.id] });
+      toast({ title: "You’re enrolled", description: "Your course is now on your dashboard and your progress will be tracked." });
+    },
+    onError: (error: Error) => toast({
+      title: "Could not enroll in course",
+      description: error.message,
+      variant: "destructive",
+    }),
   });
   const openConversation = useMutation({
     mutationFn: () => apiRequest("POST", `/api/messages/course/${courseId}`),
@@ -73,6 +86,7 @@ export default function CoursePage() {
 
   const hasActiveSubscription = !!user.hasActiveSubscription;
   const hasCourseAccess = true;
+  const courseEnrollment = dashboardCourses?.find((item) => item.id === courseId);
 
   const completedModuleIds = new Set(
     completions?.map((completion) => completion.moduleId) || []
@@ -182,16 +196,19 @@ export default function CoursePage() {
                 {course.description}
               </p>
               {user.role === "student" && course.isPublished && course.instructorId && (
-                <Button
-                  variant="outline"
-                  className="gap-2"
-                  disabled={openConversation.isPending}
-                  onClick={() => openConversation.mutate()}
-                >
-                  <MessageCircle className="h-4 w-4" />
-                  {openConversation.isPending ? "Opening conversation..." : "Message instructor"}
+                <div className="mb-6 flex flex-wrap items-center gap-3">
+                  <Button
+                    size="lg"
+                    className="gap-2 shadow-sm"
+                    disabled={openConversation.isPending}
+                    onClick={() => openConversation.mutate()}
+                  >
+                    <MessageCircle className="h-4 w-4" />
+                    {openConversation.isPending ? "Opening conversation..." : "Message instructor"}
+                  </Button>
                   <Badge variant="secondary">Beta</Badge>
-                </Button>
+                  <span className="text-sm text-muted-foreground">Have a question? Contact the instructor for this course.</span>
+                </div>
               )}
             </>
           ) : (
@@ -215,6 +232,29 @@ export default function CoursePage() {
 
       {/* Modules */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {user.role === "student" && course && courseEnrollment && !courseEnrollment.isEnrolled && (
+          <div className="mb-6 flex flex-col gap-4 rounded-xl border border-primary/25 bg-primary/5 p-5 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="font-semibold text-foreground">Enroll to track your progress</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Enrollment adds this course to your dashboard. It does not change your payment or content-access status.
+              </p>
+            </div>
+            {courseEnrollment.enrollmentMode === "self" ? (
+              <Button onClick={() => enrollInCourse.mutate()} disabled={enrollInCourse.isPending}>
+                {enrollInCourse.isPending ? "Enrolling..." : "Enroll in course"}
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                disabled={!course.instructorId || openConversation.isPending}
+                onClick={() => openConversation.mutate()}
+              >
+                {openConversation.isPending ? "Opening conversation..." : "Contact instructor to enroll"}
+              </Button>
+            )}
+          </div>
+        )}
         <div className="mb-4 flex items-center justify-between gap-3 lg:mb-6">
           <div className="hidden lg:block">
             <h2 className="text-2xl font-semibold text-foreground mb-2">Course Modules</h2>

@@ -299,7 +299,7 @@ export default function Dashboard() {
       {/* Courses Section */}
       <div className="mx-auto grid max-w-7xl gap-8 px-4 py-12 sm:px-6 lg:grid-cols-[minmax(0,1fr)_300px] lg:px-8">
         <main className="min-w-0">
-        <div className="mb-8">
+        <div id="my-courses" className="mb-8 scroll-mt-20">
           <h2 className="text-3xl font-bold text-foreground mb-2">Your enrolled courses</h2>
           <p className="text-muted-foreground">
             Your course progress is tracked after you enroll.
@@ -346,10 +346,9 @@ export default function Dashboard() {
           </div>
         )}
 
-        <section className="mt-14">
+        <section id="explore-courses" className="mt-14 scroll-mt-20">
           <div className="mb-6">
             <h2 className="text-2xl font-bold text-foreground">Explore courses</h2>
-            <p className="mt-1 text-sm text-muted-foreground">Course access and enrollment are separate. A subscription unlocks content; enrolling adds the course to your learning dashboard.</p>
           </div>
           {isLoading ? (
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">

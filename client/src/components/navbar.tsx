@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type MouseEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bell, BookOpen, CalendarClock, CalendarDays, ClipboardList, FolderKanban, LayoutDashboard, LogOut, Medal, Menu, MessageCircle, Moon, Sun } from "lucide-react";
+import { Bell, BookOpen, CalendarClock, CalendarDays, ClipboardList, Compass, FolderKanban, LayoutDashboard, LogOut, Medal, Menu, MessageCircle, Moon, Sun } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -40,9 +40,16 @@ interface EventNotificationRecord {
   readAt: string | null;
 }
 
-const navItems = [
+interface NavItem {
+  href: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  sectionId?: string;
+}
+
+const navItems: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/courses", label: "My Courses", icon: BookOpen },
+  { href: "/courses#my-courses", label: "My Courses", icon: BookOpen, sectionId: "my-courses" },
   { href: "/projects", label: "Projects", icon: FolderKanban },
 ];
 
@@ -100,9 +107,27 @@ export function Navbar() {
   };
 
   const userName = user?.fullName || "Student";
+  const exploreCoursesNavItem: NavItem = {
+    href: "/courses#explore-courses",
+    label: "Explore Courses",
+    icon: Compass,
+    sectionId: "explore-courses",
+  };
   const staffNavItems = user?.role && ["admin", "super_admin", "instructor"].includes(user.role)
     ? [...navItems, { href: "/admin", label: "Admin CMS", icon: LayoutDashboard }]
-    : navItems;
+    : user?.role === "student"
+      ? [navItems[0], navItems[1], exploreCoursesNavItem, navItems[2]]
+      : navItems;
+  const isNavItemActive = (item: NavItem) => item.sectionId
+    ? location.startsWith("/courses") && window.location.hash === `#${item.sectionId}`
+    : location === item.href;
+  const handleCourseSectionNavigation = (sectionId: string) => (event: MouseEvent<HTMLAnchorElement>) => {
+    event.preventDefault();
+    setLocation(`/courses#${sectionId}`);
+    window.setTimeout(() => {
+      document.getElementById(sectionId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, location.startsWith("/courses") ? 0 : 100);
+  };
   const activeTier = leaderboard?.tiers?.find((tier) => tier.id === leaderboard.tier);
   const unreadEventNotifications = eventNotifications.filter((notification) => !notification.readAt).length;
   const showWhatsAppButton = ["/dashboard", "/courses", "/projects", "/profile"].includes(location)
@@ -120,10 +145,10 @@ export function Navbar() {
           <div className="hidden items-center gap-1 md:flex">
             {staffNavItems.map((item) => {
               const Icon = item.icon;
-              const isActive = location === item.href;
+              const isActive = isNavItemActive(item);
 
               return (
-                <Link key={item.href} href={item.href}>
+                <Link key={item.href} href={item.href} onClick={item.sectionId ? handleCourseSectionNavigation(item.sectionId) : undefined}>
                   <Button
                     variant={isActive ? "secondary" : "ghost"}
                     className="gap-2"
@@ -350,7 +375,8 @@ export function Navbar() {
                       <SheetClose key={item.href} asChild>
                         <Link
                           href={item.href}
-                          className={`flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground ${location === item.href ? "bg-accent text-accent-foreground" : ""}`}
+                          onClick={item.sectionId ? handleCourseSectionNavigation(item.sectionId) : undefined}
+                          className={`flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground ${isNavItemActive(item) ? "bg-accent text-accent-foreground" : ""}`}
                         >
                           <Icon className="h-4 w-4" />
                           {item.label}

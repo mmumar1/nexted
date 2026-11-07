@@ -13,6 +13,14 @@ Messaging is private and course-scoped, not a general chat:
 
 The current dashboard treats all published courses as accessible, so messaging follows that same rule. If course enrollment/access rules become more restrictive, update the server-side messaging authorization at the same time.
 
+## Relationship to Strings
+
+Strings is planned as a distinct community module inside Learnpedia, initially sharing its accounts and platform infrastructure. The future Strings direction is documented in [LEARNING_HOME_AND_COMMUNITY_README.md](./LEARNING_HOME_AND_COMMUNITY_README.md).
+
+This implementation remains course-scoped messaging between a student and the instructor assigned to a course. Strings does not currently provide general student-to-student or mentor direct messaging. Do not replace or broaden the existing conversation model as part of the Strings feed or navigation work.
+
+If general Strings messaging is considered later, treat it as a separate product capability with explicit conversation permissions, message requests or contact rules, blocking and reporting, notification behavior, and safeguards for adult-to-minor interactions. Reuse shared messaging infrastructure only where the authorization and safety models fit; never infer permission from a follow relationship.
+
 ## Security and data model
 
 The authenticated Supabase bearer token determines the requester; client-provided user, role, instructor, and sender IDs are not trusted. Each API operation checks the current course publication state and conversation membership. Instructor access is derived from the course's current `instructor_id`, so reassignment removes the former instructor's access.

@@ -1,131 +1,175 @@
-# Learnpedia Learning Home and Community Concept
+# Learnpedia Learning Home and Strings Direction
 
-This document captures an early product idea for a future Learnpedia redesign. It is for discussion and planning only: none of the functionality below is implemented or approved as a final specification.
+This document records the agreed product direction for evolving Learnpedia's signed-in experience. It is a planning guide; the proposed Strings experience and navigation changes are not yet implemented.
 
 ## Product direction
 
-Explore evolving the post-login experience from a primarily course-focused dashboard into a learning home where students can continue their studies, discover other courses, and participate in a learning community.
+Learnpedia remains the learning platform. **Strings** is a distinct community and discovery module within Learnpedia: it helps people connect through what they learn, create, and contribute.
 
-Use familiar community-product patterns as inspiration, but do not copy another platform's interface directly. The experience should remain focused on learning and make each student's next learning action easy to find.
+Build Strings as a modular product experience while initially sharing Learnpedia accounts, authentication, and platform infrastructure. Keep clear module boundaries so a standalone Strings app could be considered later if real usage supports it. Do not build separate identity, services, or infrastructure prematurely.
 
-## Possible main destinations
+The social experience should support learning and meaningful discovery, not displace learning with engagement for its own sake. The public Learnpedia landing page remains the place to explain the product; the signed-in experience can become community-first.
 
-### Home
+## Agreed information architecture
 
-A relevant learning feed containing posts from students and instructors. Possible post types include:
+For students, the intended primary destinations are:
 
-- Study questions and learning tips
-- Learning milestones
-- Instructor updates
-- Course-related discussions
+### Strings
 
-The feed should complement the formal learning experience. Important course announcements should remain clearly identified and reliably available to their intended audience rather than getting lost in a general feed.
+The main signed-in home and community feed. It can bring together learning-related posts, questions, project updates, achievements, and instructor contributions. The feed should help users discover useful work and people while keeping learning context clear.
 
 ### My Learning
 
-A dedicated place for courses the student is taking, including:
-
-- A clear way to resume a course
-- Course progress and completion state
-- Recently accessed or in-progress courses
+A focused area for courses the student has enrolled in, with progress and a clear way to resume. Keep course enrollment distinct from subscription/content access, consistent with the existing data model.
 
 ### Explore Courses
 
-A catalogue of courses the student is not currently taking. Potential capabilities:
+A separate course catalogue for finding courses and taking an enrollment action. Course listings should not dominate the Strings feed or appear as a large catalogue on the signed-in home. Users can choose **My Learning** or **Explore Courses** when they want to see courses.
 
-- Search
-- Useful filters, such as subject, level, instructor, and price (confirm which fields exist and matter)
-- Pagination or a load-more pattern for a large catalogue
-- A clear action to view course details and enroll, subject to the existing access/payment rules
+Course details and learning activities remain reachable after a user selects a course. This navigation change is about clearer destinations, not removing courses or weakening access controls.
 
-The definition of “currently taking” must be agreed and implemented consistently with the existing enrollment, subscription, and course-access model.
+Notifications and existing course messages should remain easy to reach from the navigation. Mobile navigation should expose the same destinations without overcrowding the navbar.
 
-## Navigation ideas
+### Role-aware experience
 
-- Keep Home, My Learning, and Explore Courses as the primary destinations.
-- Keep notifications and messages accessible from the top navigation.
-- On phone screens, make the main destinations easy to reach without overcrowding the top navbar; choose an appropriate mobile navigation pattern during design.
-- Preserve clear role-based behavior for students, instructors, and administrators. The initial idea primarily describes the student experience.
+Strings is primarily described from the student perspective, but instructors may contribute learning content and participate under clear role labels and permissions. Instructors and administrators must retain their teaching and management destinations; the community home must not replace or weaken admin tools or role-based access.
 
-## Recommended initial scope
+## Signed-in entry and transition
 
-Start with the information architecture and a focused learning home:
+The intended destination after login is the Strings feed, once a useful and safe first version is ready. Do not redirect users to an empty or unfinished feed. Until then, preserve the current working dashboard. Plan and test the transition for login, registration, and existing dashboard links together.
 
-1. Home feed with simple text posts, author identity, timestamp, and optional course association.
-2. Clear distinction between student and instructor posts.
-3. My Learning view focused on progress and resuming a course.
-4. Explore Courses view that excludes courses the student is already taking and supports search/filtering and pagination or load more.
-5. Existing course announcements and messages remain accessible and do not get silently replaced by feed content.
+The current public landing page and the authenticated home serve different purposes:
 
-Consider postponing comments, reactions, images, ranking/personalized algorithms, and other advanced social features until the basic experience has been validated.
+- Public landing: explain Learnpedia and provide sign-in/registration entry points.
+- Signed-in student home: Strings feed when the first release is ready.
+- My Learning: enrolled courses and learning progress.
+- Explore Courses: course discovery and enrollment.
 
-## Decisions needed before implementation
+## Content and product boundaries
 
-### Feed audience and permissions
+### Feed
 
-- Are posts visible to all authenticated Learnpedia users, only members of a course, or an audience selected by the author?
-- Can authors choose visibility, and if so, which options are safe and understandable?
-- Can students post from the first release, or should the first version be instructor-only?
-- Are posts associated with a course, and who is allowed to post to that course?
-- How do edits, deletion, and retention work?
+Start with a learning-oriented, chronological feed rather than a personalized ranking system. Potential durable post types include:
 
-### Safety and moderation
+- Learning questions, tips, and reflections
+- Project updates and work in progress
+- Achievements and learning milestones
+- Instructor learning guidance
+- Course-related discussion with clear course context
 
-If students can publish content to other users, define before launch:
+Projects already exist in Learnpedia. Integrate or link them into Strings where appropriate rather than rebuilding the project feature without a product need.
 
-- Reporting and moderation workflow
-- Spam and inappropriate-content handling
-- Blocking or other user-safety controls, if needed
-- Who can remove content and how moderation decisions are audited
-- Rate limits and other abuse-prevention measures
+Important course announcements must remain clearly identified and reliably available to their intended audience. Do not make official announcements depend on feed ranking or users scrolling past unrelated posts.
 
-### Course discovery
+### Stories
 
-- Which course attributes support useful search and filters?
-- What exact rule identifies a course as one the user is taking?
-- How do paid courses, subscription access, enrollment, archived courses, and completed courses appear?
-- Should results be paginated, loaded incrementally, or both?
+Stories are a possible later format, not a prerequisite for the first Strings release. They could make short-lived learning updates more visible, but should follow a stable feed and baseline safety/moderation capabilities.
 
-### Notifications and announcements
+Before building Stories, decide whether they expire, can be archived, or become durable profile/portfolio entries; who can view and reply; and how users can report or control visibility. Keep temporary Stories distinct from durable project and achievement posts so valuable work is not lost by default.
 
-- Which feed activity creates a notification, if any?
-- How are course announcements distinguished from community posts?
-- What notification preferences and delivery channels should be supported?
+### GitHub-like contribution flow
 
-## UX and product principles
+Borrow the useful idea of making progress and contributions visible: project showcases, learning milestones, and a portfolio of work can help people discover each other through their contributions. This is inspiration for the learning experience, not a requirement to copy GitHub's interface or workflows, or to make Strings only about software development.
 
-- Keep the primary student goal—learning—more prominent than social activity.
-- Do not make important course content depend on feed ranking or scrolling.
-- Clearly label author role, course context, and post visibility.
-- Provide useful empty, loading, and error states.
-- Keep mobile navigation usable on narrow screens.
-- Avoid showing fake activity, fabricated counts, or unread indicators that are not backed by real state.
+### Messaging
 
-## Potential implementation phases
+Keep the existing messaging system course-scoped: it connects a student and the instructor responsible for a course. It is not currently general student-to-student or mentor direct messaging. See [CHAT_IMPLEMENTATION.md](./CHAT_IMPLEMENTATION.md).
 
-These are candidate phases, not a committed delivery plan:
+Do not rebuild or silently repurpose course conversations as social direct messages. General student or mentor messaging is a separate future capability that needs its own contact rules, requests, blocking/reporting, notifications, and safeguards for adult-to-minor contact.
 
-1. Review current dashboard, enrollment/access logic, announcements, notifications, and responsive navigation.
-2. Agree on audience, permissions, moderation, and what counts as an active course.
-3. Prototype and validate the Home / My Learning / Explore information architecture.
-4. Implement Explore Courses and My Learning using the established course-access model.
-5. Design and implement a minimal feed, including authorization and moderation controls, if the product decisions support it.
-6. Add richer interactions only after usability and safety needs are understood.
+## Current implementation context
 
-## Future success measures
+- The authenticated home is currently the course-focused dashboard.
+- The navbar already has course-related destinations and separates enrolled courses from course exploration.
+- A Projects feature and course-scoped instructor messaging exist.
+- The Strings feed, social profiles, follows, Stories, and general social messaging described here are future work, not existing functionality.
 
-Choose measurable goals before implementation. Potential indicators include:
+Implementation planning should verify current routes, components, enrollment and access behavior, authentication roles, notifications, data policies, and responsive navigation before proposing code or migrations.
 
-- How quickly a student resumes an in-progress course
+## Recommended delivery stages
+
+These are sequencing recommendations, not a commitment to build every feature.
+
+### Stage 0 — Product and safety foundations
+
+- Audit current dashboard, navigation, roles, profile data, projects, course enrollment/access, announcements, and messaging.
+- Confirm the first-release audience, post visibility, course-context rules, moderation ownership, and school/instructor permissions.
+- Define age-appropriate privacy defaults and safeguarding requirements before enabling student-generated content or adult-to-minor contact.
+- Prototype Strings, My Learning, and Explore Courses navigation, including mobile layouts.
+- Keep current course data and course messaging behavior intact during the transition.
+
+### Stage 1 — Strings foundation
+
+- Create a distinct Strings home/feed module within Learnpedia.
+- Start with a simple chronological, learning-focused feed and clear author identity and post context.
+- Establish authentication, authorization, input validation, reporting, moderation, and abuse-prevention requirements as part of the launch scope.
+- Make projects and learning activity discoverable without duplicating existing project or course records unnecessarily.
+- Do not require Stories, feed ranking, general messaging, or a standalone app for this stage.
+
+### Stage 2 — Learning navigation and useful interactions
+
+- Make Strings the student landing destination only after the feed is ready and tested.
+- Provide separate My Learning and Explore Courses destinations; keep the catalogue out of the default feed.
+- Add selected interactions such as following, reactions, and comments only with their privacy, reporting, blocking, and notification behavior defined.
+- Measure whether community use supports learning and discovery, not only time spent in the feed.
+
+### Stage 3 — Stories and richer identity
+
+- Consider Stories after the feed and moderation processes are working.
+- Add richer student portfolios, project and achievement presentation, and discovery based on interests if validated by users.
+- Define how temporary Stories differ from durable profile or project content.
+
+### Stage 4 — Broader ecosystem
+
+- Explore school and organization profiles, opportunities, mentorship, and additional community capabilities in response to demonstrated needs.
+- Defer general social messaging until a safe and explicit permission model is approved.
+
+### Stage 5 — Consider standalone Strings
+
+Evaluate a separate web/mobile Strings application only when usage, engagement, support needs, and product strategy justify the operational cost. Reuse shared accounts and learning integrations where appropriate. Modularity now should reduce future separation cost, not force a premature service split.
+
+## Safety, privacy, and moderation
+
+Safety is a release requirement for any feature that lets students publish or interact with user-generated content. Define and test:
+
+- Post and profile visibility, including safe defaults for minors
+- Reporting of content and accounts, moderation review, escalation, and audit history
+- Blocking and protections against unwanted contact
+- Rate limits, spam prevention, and content removal/retention rules
+- Appropriate school and parent/guardian permissions where required
+- Clear explanations of what student information is visible and why
+- Separation of service communications from marketing consent
+
+Do not expose student data to schools, organizations, mentors, or other users by default. Any future school or organization access needs a specific authorization model and data-minimizing design.
+
+## Decisions to settle before implementation
+
+- Who may join and publish in the first release, and how role eligibility is verified
+- Whether the first feed is visible to all authenticated users or limited by school/course
+- What profile details are public, private, or unavailable for minors
+- How posts are edited, deleted, retained, and moderated
+- Which course announcements or activities may appear in Strings and how they are labeled
+- What mobile navigation pattern presents Strings, My Learning, and Explore Courses
+- Whether Stories expire, can be archived, or can be converted into portfolio entries
+- What evidence would justify adding general messaging or a standalone Strings app
+
+## Success measures
+
+Choose baselines and reporting windows before launch. Useful measures include:
+
+- Time to resume an enrolled course
 - Course discovery-to-enrollment rate
-- Student return rate and course completion
-- Feed usefulness and contribution quality
-- Reports, moderation response time, and spam rates
+- Course progress and completion
+- Students returning to learn after contributing or discovering a post
+- Useful project, question, or learning-content contributions
+- Feed reports, spam rates, and moderation response time
 
-Do not optimize for feed engagement alone if it distracts from learning outcomes.
+Do not optimize for feed activity alone if it distracts from learning outcomes or student safety.
 
 ## Status
 
-- Product concept only
-- No implementation requested or performed
-- Major behavior, access, moderation, and navigation decisions remain open
+- Product direction agreed: Strings as a distinct module inside Learnpedia, with shared accounts and infrastructure initially.
+- Intended student navigation agreed: Strings home, My Learning, and Explore Courses.
+- Stories and standalone Strings apps are future considerations, not first-release requirements.
+- Course-scoped instructor messaging remains in place; general social messaging is deferred.
+- This document is a planning guide. No application functionality is implemented by this document.

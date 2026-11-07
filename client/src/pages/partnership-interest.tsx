@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { Link } from "wouter";
+import { BrandLogo } from "@/components/brand-logo";
 import { useMutation } from "@tanstack/react-query";
 import { ArrowLeft, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -151,6 +152,9 @@ export default function PartnershipInterestPage() {
         </Link>
         <Card>
           <CardHeader>
+            <div className="mb-2 flex justify-center">
+              <BrandLogo className="h-14 w-auto" />
+            </div>
             <CardTitle className="text-2xl sm:text-3xl">Learnpedia — School Partnership Interest Form</CardTitle>
             <CardDescription className="text-sm leading-6">
               Thank you for your interest in Learnpedia. This form helps us understand your institution’s needs and identify suitable areas for collaboration. Completing it indicates interest in further discussion and does not constitute a binding partnership agreement or financial commitment.

@@ -2,6 +2,7 @@ import { useEffect, useState, type MouseEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bell, BookOpen, CalendarClock, CalendarDays, ClipboardList, Compass, FolderKanban, Handshake, LayoutDashboard, LogOut, Medal, Menu, MessageCircle, Moon, Sun } from "lucide-react";
 import { Link, useLocation } from "wouter";
+import { BrandLogo } from "@/components/brand-logo";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -140,7 +141,7 @@ export function Navbar() {
       <div className="mx-auto max-w-7xl px-2 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
           <Link href="/dashboard" className="flex shrink-0 items-center gap-2 rounded-md px-1 py-1 hover-elevate sm:px-2" data-testid="link-home">
-            <span className="text-sm font-bold text-foreground min-[380px]:text-base sm:text-lg">Learnpedia</span>
+            <BrandLogo className="h-10 w-auto" darkBackground={isDarkMode} />
           </Link>
 
           <div className="hidden items-center gap-1 md:flex">

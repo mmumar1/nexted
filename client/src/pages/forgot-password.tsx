@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link } from "wouter";
+import { BrandLogo } from "@/components/brand-logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -32,7 +33,9 @@ export default function ForgotPassword() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/5 via-background to-accent/5 p-4">
       <Card className="w-full max-w-md border-card-border">
         <CardHeader className="text-center">
-          <div className="text-2xl font-bold text-foreground">LEARNPEDIA</div>
+          <div className="mb-2 flex justify-center">
+            <BrandLogo className="h-14 w-auto" />
+          </div>
           <CardTitle className="mt-4 text-2xl">Reset your password</CardTitle>
           <CardDescription>Enter your account email and we will send you a secure reset link.</CardDescription>
         </CardHeader>

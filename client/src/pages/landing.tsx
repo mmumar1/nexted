@@ -11,6 +11,7 @@ import {
   X,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
+import { BrandLogo } from "@/components/brand-logo";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import Login from "@/pages/login";
@@ -180,8 +181,7 @@ function Brand() {
       className="inline-flex flex-col rounded-md leading-none"
       aria-label="Learnpedia home"
     >
-      <span className="text-xl font-extrabold tracking-tight" style={{ color: brand.navy }}>Learnpedia</span>
-      <span className="mt-1 text-[10px] font-bold tracking-[0.16em] text-[#20A99A]">LEARN WITHOUT LIMITS</span>
+      <BrandLogo className="h-12 w-auto" />
     </Link>
   );
 }

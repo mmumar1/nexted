@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
 import { Link } from "wouter";
+import { BrandLogo } from "@/components/brand-logo";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
@@ -110,12 +111,9 @@ export default function Register({ inlineModal = false, onClose, switchToLogin }
       <div className={`w-full ${inlineModal ? "max-w-none" : "max-w-xl space-y-6"}`}>
         <Card className={inlineModal ? "border-0 bg-white shadow-none" : "border-card-border"}>
           <CardHeader className={`space-y-1 text-center ${inlineModal ? "px-5 pb-4 pt-5 sm:px-8 sm:pt-7" : ""}`}>
-            {!inlineModal && <div className="flex justify-center mb-4">
-              <div className="text-left">
-                <div className="text-2xl font-bold text-foreground">Learnpedia</div>
-                <div className="text-xs text-muted-foreground">Learn Without limits</div>
-              </div>
-            </div>}
+            <div className="mb-4 flex justify-center">
+              <BrandLogo className={inlineModal ? "h-10 w-auto" : "h-14 w-auto"} />
+            </div>
             <CardTitle className="text-2xl font-bold text-[#17243B]">Create your account</CardTitle>
             <CardDescription className="text-base">
               Start your learning journey today

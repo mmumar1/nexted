@@ -31,11 +31,13 @@ import type {
   Module,
   ModuleCompletion,
   Project,
+  PartnershipInterest,
   Quiz,
   QuizAttempt,
   User,
   UserCourse,
 } from "../shared/schema.js";
+import type { PartnershipInterestInput } from "../shared/partnership-interest.js";
 
 // The server reads the local file during development; production uses platform env vars.
 dotenv.config({ path: ".env.local" });
@@ -1088,5 +1090,71 @@ export class SupabaseStorage implements IStorage {
   async createProject(project: InsertProject) {
     const { data, error } = await this.client.from("projects").insert({ user_id: project.userId, course_id: project.courseId, title: project.title, link: project.link, description: project.description, status: project.status ?? "pending" }).select("*").single();
     return mapProject(required(data, error)!);
+  }
+
+  async createPartnershipInterest(input: PartnershipInterestInput) {
+    const payload: DatabaseRow = {
+      school_name: input.schoolName,
+      school_address: input.schoolAddress,
+      city_or_lga: input.cityOrLga,
+      state: input.state,
+      school_type: input.schoolType,
+      website_or_social_page: input.websiteOrSocialPage,
+      contact_name: input.contactName,
+      contact_position: input.contactPosition,
+      phone_number: input.phoneNumber,
+      email_address: input.emailAddress,
+      preferred_communication: input.preferredCommunication,
+      student_count: input.studentCount,
+      classes_available: input.classesAvailable,
+      uses_digital_learning: input.usesDigitalLearning,
+      digital_learning_details: input.digitalLearningDetails,
+      areas_of_interest: input.areasOfInterest,
+      other_interest: input.otherInterest,
+      challenges_and_needs: input.challengesAndNeeds,
+      partnership_arrangement: input.partnershipArrangement,
+      partnership_value: input.partnershipValue,
+      orientation_interest: input.orientationInterest,
+      follow_up_period: input.followUpPeriod,
+      additional_comments: input.additionalComments,
+      acknowledged: input.acknowledged,
+    };
+    const { error } = await this.client.from("partnership_interests").insert(payload);
+    if (error) throw new Error(error.message);
+  }
+
+  async getPartnershipInterests(): Promise<PartnershipInterest[]> {
+    const { data, error } = await this.client
+      .from("partnership_interests")
+      .select("*")
+      .order("submitted_at", { ascending: false });
+    return (required(data, error) ?? []).map((row: DatabaseRow) => ({
+      id: row.id,
+      schoolName: row.school_name,
+      schoolAddress: row.school_address,
+      cityOrLga: row.city_or_lga,
+      state: row.state,
+      schoolType: row.school_type,
+      websiteOrSocialPage: row.website_or_social_page,
+      contactName: row.contact_name,
+      contactPosition: row.contact_position,
+      phoneNumber: row.phone_number,
+      emailAddress: row.email_address,
+      preferredCommunication: row.preferred_communication,
+      studentCount: row.student_count,
+      classesAvailable: row.classes_available,
+      usesDigitalLearning: row.uses_digital_learning,
+      digitalLearningDetails: row.digital_learning_details,
+      areasOfInterest: row.areas_of_interest,
+      otherInterest: row.other_interest,
+      challengesAndNeeds: row.challenges_and_needs,
+      partnershipArrangement: row.partnership_arrangement,
+      partnershipValue: row.partnership_value,
+      orientationInterest: row.orientation_interest,
+      followUpPeriod: row.follow_up_period,
+      additionalComments: row.additional_comments,
+      acknowledged: row.acknowledged,
+      submittedAt: new Date(row.submitted_at),
+    }));
   }
 }

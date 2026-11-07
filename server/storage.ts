@@ -31,7 +31,9 @@ import {
   type CourseMessage,
   type Project,
   type InsertProject,
+  type PartnershipInterest,
 } from "../shared/schema.js";
+import type { PartnershipInterestInput } from "../shared/partnership-interest.js";
 import { randomUUID } from "crypto";
 import { SupabaseStorage } from "./supabase-storage.js";
 
@@ -130,6 +132,10 @@ export interface IStorage {
   getProject(id: string): Promise<Project | undefined>;
   getUserProjects(userId: string): Promise<Project[]>;
   createProject(project: InsertProject): Promise<Project>;
+
+  // School partnership interest
+  createPartnershipInterest(input: PartnershipInterestInput): Promise<void>;
+  getPartnershipInterests(): Promise<PartnershipInterest[]>;
 }
 
 export class MemStorage implements IStorage {
@@ -150,6 +156,7 @@ export class MemStorage implements IStorage {
   private courseMessages: Map<string, CourseMessage>;
   private quizAttempts: Map<string, QuizAttempt>;
   private projects: Map<string, Project>;
+  private partnershipInterests: Map<string, PartnershipInterest>;
 
   constructor() {
     this.users = new Map();
@@ -169,6 +176,7 @@ export class MemStorage implements IStorage {
     this.courseMessages = new Map();
     this.quizAttempts = new Map();
     this.projects = new Map();
+    this.partnershipInterests = new Map();
 
     this.users.set("admin-local", {
       id: "admin-local",
@@ -1158,6 +1166,20 @@ export class MemStorage implements IStorage {
     };
     this.projects.set(id, project);
     return project;
+  }
+
+  async createPartnershipInterest(input: PartnershipInterestInput): Promise<void> {
+    const id = randomUUID();
+    this.partnershipInterests.set(id, {
+      ...input,
+      id,
+      submittedAt: new Date(),
+    });
+  }
+
+  async getPartnershipInterests(): Promise<PartnershipInterest[]> {
+    return Array.from(this.partnershipInterests.values())
+      .sort((a, b) => b.submittedAt.getTime() - a.submittedAt.getTime());
   }
 }
 

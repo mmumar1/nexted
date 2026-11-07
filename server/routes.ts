@@ -24,6 +24,7 @@ import {
   type Module,
   type QuizQuestion,
 } from "../shared/schema.js";
+import { partnershipInterestInputSchema } from "../shared/partnership-interest.js";
 import { z } from "zod";
 import { createSupabaseAdminClient, createSupabaseAuthClient } from "./supabase-admin.js";
 import { compareModuleOrder, isModuleWithinFreeTopLevelTier } from "../shared/module-utils.js";
@@ -142,6 +143,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     return requester;
   };
 
+  const requireAuthenticatedPartnerAdmin = async (req: Request, res: Response) => {
+    const authorization = req.header("Authorization");
+    const accessToken = authorization?.startsWith("Bearer ")
+      ? authorization.slice("Bearer ".length)
+      : undefined;
+    if (!accessToken) {
+      res.status(401).json({ error: "Supabase access token required" });
+      return undefined;
+    }
+
+    const { data, error } = await createSupabaseAuthClient().auth.getUser(accessToken);
+    if (error || !data.user) {
+      res.status(401).json({ error: "Invalid Supabase session" });
+      return undefined;
+    }
+
+    const requester = await storage.getUser(data.user.id);
+    if (!requester || !["admin", "super_admin", "superadmin"].includes(requester.role)) {
+      res.status(403).json({ error: "Administrator access required" });
+      return undefined;
+    }
+
+    return requester;
+  };
+
   const requireAuthenticatedStudent = async (req: Request, res: Response) => {
     const authorization = req.header("Authorization");
     const accessToken = authorization?.startsWith("Bearer ")
@@ -204,6 +230,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   const isSuperAdmin = (role?: string | null) => ["admin", "super_admin", "superadmin"].includes(role || "");
   const canReviewManualPayments = (role?: string | null) => role === "super_admin";
+
+  app.post("/api/partnership-interests", async (req, res) => {
+    try {
+      const input = partnershipInterestInputSchema.parse(req.body);
+      await storage.createPartnershipInterest(input);
+      res.status(201).json({ success: true });
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
+      console.error("Could not save school partnership interest:", error);
+      res.status(500).json({ error: "Could not submit the partnership interest form. Please try again." });
+    }
+  });
+
+  app.get("/api/admin/partnership-interests", async (req, res) => {
+    try {
+      if (!(await requireAuthenticatedPartnerAdmin(req, res))) return;
+      res.json(await storage.getPartnershipInterests());
+    } catch (error) {
+      console.error("Could not load school partnership interests:", error);
+      res.status(500).json({ error: "Could not load partnership submissions." });
+    }
+  });
 
   const canAccessModule = async (userId: string, module: Module) => {
     const courseModules = await storage.getModulesByCourse(module.courseId);

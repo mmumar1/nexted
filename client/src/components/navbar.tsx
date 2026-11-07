@@ -1,6 +1,6 @@
 import { useEffect, useState, type MouseEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bell, BookOpen, CalendarClock, CalendarDays, ClipboardList, Compass, FolderKanban, LayoutDashboard, LogOut, Medal, Menu, MessageCircle, Moon, Sun } from "lucide-react";
+import { Bell, BookOpen, CalendarClock, CalendarDays, ClipboardList, Compass, FolderKanban, Handshake, LayoutDashboard, LogOut, Medal, Menu, MessageCircle, Moon, Sun } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -51,6 +51,7 @@ const navItems: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/courses#my-courses", label: "My Courses", icon: BookOpen, sectionId: "my-courses" },
   { href: "/projects", label: "Projects", icon: FolderKanban },
+  { href: "/partners", label: "Become a Partner", icon: Handshake },
 ];
 
 export function Navbar() {
@@ -116,7 +117,7 @@ export function Navbar() {
   const staffNavItems = user?.role && ["admin", "super_admin", "instructor"].includes(user.role)
     ? [...navItems, { href: "/admin", label: "Admin CMS", icon: LayoutDashboard }]
     : user?.role === "student"
-      ? [navItems[0], navItems[1], exploreCoursesNavItem, navItems[2]]
+      ? [navItems[0], navItems[1], exploreCoursesNavItem, navItems[2], navItems[3]]
       : navItems;
   const isNavItemActive = (item: NavItem) => item.sectionId
     ? location.startsWith("/courses") && window.location.hash === `#${item.sectionId}`

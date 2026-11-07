@@ -95,6 +95,7 @@ alter table public.profiles enable row level security;
 alter table public.courses enable row level security;
 alter table public.user_courses enable row level security;
 alter table public.course_enrollments enable row level security;
+alter table public.partnership_interests enable row level security;
 alter table public.modules enable row level security;
 alter table public.module_completions enable row level security;
 alter table public.quizzes enable row level security;
@@ -114,6 +115,8 @@ alter table public.payments enable row level security;
 revoke insert, update, delete on public.user_courses from anon, authenticated;
 grant select on public.user_courses to authenticated;
 grant all on public.user_courses to service_role;
+revoke all on public.partnership_interests from anon, authenticated;
+grant all on public.partnership_interests to service_role;
 
 -- Profiles
 create policy "Users can view their own profile"

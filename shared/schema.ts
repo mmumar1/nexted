@@ -471,6 +471,37 @@ export const insertProjectSchema = createInsertSchema(projects).omit({ id: true,
 export type InsertProject = z.infer<typeof insertProjectSchema>;
 export type Project = typeof projects.$inferSelect;
 
+export const partnershipInterests = pgTable("partnership_interests", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  schoolName: text("school_name").notNull(),
+  schoolAddress: text("school_address").notNull(),
+  cityOrLga: text("city_or_lga").notNull(),
+  state: text("state").notNull(),
+  schoolType: text("school_type").notNull(),
+  websiteOrSocialPage: text("website_or_social_page"),
+  contactName: text("contact_name").notNull(),
+  contactPosition: text("contact_position").notNull(),
+  phoneNumber: text("phone_number").notNull(),
+  emailAddress: text("email_address").notNull(),
+  preferredCommunication: text("preferred_communication").notNull(),
+  studentCount: text("student_count").notNull(),
+  classesAvailable: text("classes_available").notNull(),
+  usesDigitalLearning: text("uses_digital_learning").notNull(),
+  digitalLearningDetails: text("digital_learning_details"),
+  areasOfInterest: text("areas_of_interest").array().notNull(),
+  otherInterest: text("other_interest"),
+  challengesAndNeeds: text("challenges_and_needs").notNull(),
+  partnershipArrangement: text("partnership_arrangement").notNull(),
+  partnershipValue: text("partnership_value").notNull(),
+  orientationInterest: text("orientation_interest").notNull(),
+  followUpPeriod: text("follow_up_period"),
+  additionalComments: text("additional_comments"),
+  acknowledged: boolean("acknowledged").notNull().default(false),
+  submittedAt: timestamp("submitted_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type PartnershipInterest = typeof partnershipInterests.$inferSelect;
+
 // Login schema
 export const loginSchema = z.object({
   email: z.string().email("Please enter a valid email"),

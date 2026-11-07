@@ -18,13 +18,13 @@ import { supabase } from "@/lib/supabase";
 import { QuizMarkdownEditor } from "@/components/quiz/quiz-markdown";
 import { LessonSpeechControls } from "@/components/course/lesson-speech-controls";
 import type { AnnouncementRecord } from "@/lib/announcements";
-import type { CbtExamType, Course, EventRecord, Module, QuizQuestion, User } from "@shared/schema";
-import { Archive, BarChart3, BookOpen, CalendarDays, ClipboardList, CreditCard, Download, FileQuestion, FileUp, LayoutDashboard, Pencil, Plus, RotateCcw, Send, Settings2, Trash2, UserRound, Users, X } from "lucide-react";
+import type { CbtExamType, Course, EventRecord, Module, PartnershipInterest, QuizQuestion, User } from "@shared/schema";
+import { Archive, BarChart3, BookOpen, CalendarDays, ClipboardList, CreditCard, Download, FileQuestion, FileUp, Handshake, LayoutDashboard, Pencil, Plus, RotateCcw, Send, Settings2, Trash2, UserRound, Users, X } from "lucide-react";
 import { isInitialEmptyQuizQuestion, parseQuizCsv, type QuizCsvPreview } from "@/lib/quiz-csv";
 import { formatDateTimeForZone, localDateTimeToUtc } from "@shared/event-utils";
 import { getModuleDisplayLabel } from "@shared/module-utils";
 
-type Section = "overview" | "courses" | "modules" | "quizzes" | "events" | "cbt" | "users" | "enrollments" | "progress" | "analytics" | "announcements" | "payments";
+type Section = "overview" | "courses" | "modules" | "quizzes" | "events" | "cbt" | "users" | "enrollments" | "progress" | "analytics" | "announcements" | "payments" | "partnerships";
 
 interface QuizRecord {
   id: string;
@@ -163,12 +163,13 @@ const navItems: Array<{ id: Section; label: string; icon: typeof LayoutDashboard
   { id: "analytics", label: "Analytics", icon: BarChart3 },
   { id: "announcements", label: "Announcements", icon: Plus },
   { id: "payments", label: "Payments", icon: CreditCard },
+  { id: "partnerships", label: "School partnerships", icon: Handshake },
 ];
 
 const isStaffRole = (role?: string | null) => ["admin", "super_admin", "instructor"].includes(role || "");
 const isSuperAdmin = (role?: string | null) => ["admin", "super_admin", "superadmin"].includes(role || "");
 const canReviewPayments = (role?: string | null) => role === "super_admin";
-const sections = new Set<Section>(["overview", "courses", "modules", "quizzes", "events", "cbt", "users", "enrollments", "progress", "analytics", "announcements", "payments"]);
+const sections = new Set<Section>(["overview", "courses", "modules", "quizzes", "events", "cbt", "users", "enrollments", "progress", "analytics", "announcements", "payments", "partnerships"]);
 
 function createEmptyQuizQuestion(): QuizQuestionDraft {
   return { id: crypto.randomUUID(), question: "", questionImageUrl: "", explanation: "", explanationImageUrl: "", options: ["", "", "", ""], correctAnswer: "1" };
@@ -229,7 +230,11 @@ export default function AdminCms() {
   useEffect(() => {
     const draft = readCmsDraft(adminId);
     if (draft) {
-      if (draft.section) setSection(draft.section === "payments" && !canReviewPayments(user?.role) ? "overview" : draft.section);
+      if (draft.section) {
+        const restrictedSection = (draft.section === "payments" && !canReviewPayments(user?.role))
+          || (draft.section === "partnerships" && !isSuperAdmin(user?.role));
+        setSection(restrictedSection ? "overview" : draft.section);
+      }
       if (typeof draft.selectedCourseId === "string") setSelectedCourseId(draft.selectedCourseId);
       if (draft.courseDraft) setCourseDraft((current) => ({ ...current, ...draft.courseDraft }));
       if (draft.newCourseDraft) setNewCourseDraft((current) => ({ ...current, ...draft.newCourseDraft }));
@@ -309,6 +314,11 @@ export default function AdminCms() {
       toast({ title: "Announcement posted", description: "Students can now view it from their dashboard." });
     },
     onError: (error: Error) => toast({ title: "Could not post announcement", description: error.message, variant: "destructive" }),
+  });
+
+  const partnershipInterests = useQuery<PartnershipInterest[]>({
+    queryKey: ["/api/admin/partnership-interests"],
+    enabled: isSuperAdmin(user?.role) && section === "partnerships",
   });
 
   const courses = useQuery<Course[]>({
@@ -596,7 +606,10 @@ export default function AdminCms() {
     () => (courses.data || []).filter((course) => isSuperAdmin(user?.role) || !course.instructorId || course.instructorId === user?.id),
     [courses.data, user?.id, user?.role],
   );
-  const visibleNavItems = navItems.filter((item) => item.id !== "payments" || canReviewPayments(user?.role));
+  const visibleNavItems = navItems.filter((item) =>
+    (item.id !== "payments" || canReviewPayments(user?.role))
+    && (item.id !== "partnerships" || isSuperAdmin(user?.role))
+  );
 
   return (
     <div className="min-h-screen bg-muted/20">
@@ -720,6 +733,7 @@ export default function AdminCms() {
                                   <Trash2 className="mr-2 h-4 w-4" />Delete
                                 </Button>
                               )}
+
                             </div>
                           </div>
                         </div>
@@ -955,10 +969,20 @@ export default function AdminCms() {
                         </div>
                       </div>
                     )}
+
                   </CardContent>
                 </Card>
               ))}
             </div>
+          )}
+
+          {section === "partnerships" && isSuperAdmin(user?.role) && (
+            <PartnershipInterestPanel
+              submissions={partnershipInterests.data || []}
+              isLoading={partnershipInterests.isLoading}
+              isError={partnershipInterests.isError}
+              onRefresh={() => partnershipInterests.refetch()}
+            />
           )}
         </div>
       </main>
@@ -2183,6 +2207,108 @@ function LearnerProgressPanel({
           </CardContent>
         </Card>
       )}
+    </div>
+  );
+}
+
+function PartnershipInterestPanel({
+  submissions,
+  isLoading,
+  isError,
+  onRefresh,
+}: {
+  submissions: PartnershipInterest[];
+  isLoading: boolean;
+  isError: boolean;
+  onRefresh: () => void;
+}) {
+  if (isLoading) {
+    return <Card><CardContent className="p-8 text-center text-muted-foreground">Loading school partnership submissions...</CardContent></Card>;
+  }
+  if (isError) {
+    return (
+      <Card>
+        <CardContent className="p-8 text-center">
+          <p className="text-destructive">Could not load school partnership submissions.</p>
+          <Button variant="outline" className="mt-4" onClick={onRefresh}>Try again</Button>
+        </CardContent>
+      </Card>
+    );
+  }
+  if (submissions.length === 0) {
+    return <Card><CardContent className="p-8 text-center text-muted-foreground">No school partnership submissions have been received yet.</CardContent></Card>;
+  }
+
+  return (
+    <div className="space-y-5">
+      <p className="text-sm text-muted-foreground">{submissions.length} school {submissions.length === 1 ? "submission" : "submissions"}</p>
+      {submissions.map((submission) => (
+        <Card key={submission.id}>
+          <CardHeader>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <CardTitle>{submission.schoolName}</CardTitle>
+                <CardDescription className="mt-1">
+                  {submission.schoolAddress} · {submission.cityOrLga}, {submission.state}
+                </CardDescription>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Submitted {new Date(submission.submittedAt).toLocaleString()}
+                </p>
+              </div>
+              <Badge variant="outline">{submission.schoolType}</Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <div>
+              <h3 className="mb-3 text-sm font-semibold">Administrative contact</h3>
+              <dl className="grid gap-3 sm:grid-cols-2">
+                <PartnershipAnswer label="Contact person" value={`${submission.contactName} · ${submission.contactPosition}`} />
+                <PartnershipAnswer label="Phone" value={submission.phoneNumber} />
+                <PartnershipAnswer label="Email" value={submission.emailAddress} />
+                <PartnershipAnswer label="Preferred contact method" value={submission.preferredCommunication} />
+                <PartnershipAnswer label="Website / social page" value={submission.websiteOrSocialPage} />
+              </dl>
+            </div>
+            <div>
+              <h3 className="mb-3 text-sm font-semibold">School profile</h3>
+              <dl className="grid gap-3 sm:grid-cols-2">
+                <PartnershipAnswer label="Approximate student count" value={submission.studentCount} />
+                <PartnershipAnswer label="Classes / levels" value={submission.classesAvailable} />
+                <PartnershipAnswer label="Uses digital learning" value={submission.usesDigitalLearning} />
+                <PartnershipAnswer label="Digital learning details" value={submission.digitalLearningDetails} />
+              </dl>
+            </div>
+            <div>
+              <h3 className="mb-3 text-sm font-semibold">Partnership interests</h3>
+              <dl className="grid gap-3">
+                <PartnershipAnswer label="Areas of interest" value={submission.areasOfInterest.join(", ")} />
+                {submission.otherInterest && <PartnershipAnswer label="Other area" value={submission.otherInterest} />}
+                <PartnershipAnswer label="Challenges / learning needs" value={submission.challengesAndNeeds} />
+                <PartnershipAnswer label="Preferred arrangement" value={submission.partnershipArrangement} />
+                <PartnershipAnswer label="What would make a partnership valuable" value={submission.partnershipValue} />
+              </dl>
+            </div>
+            <div>
+              <h3 className="mb-3 text-sm font-semibold">Next steps</h3>
+              <dl className="grid gap-3 sm:grid-cols-2">
+                <PartnershipAnswer label="Orientation / demonstration" value={submission.orientationInterest} />
+                <PartnershipAnswer label="Preferred follow-up period" value={submission.followUpPeriod} />
+                <PartnershipAnswer label="Additional comments" value={submission.additionalComments} />
+                <PartnershipAnswer label="Acknowledgement" value={submission.acknowledged ? "Confirmed" : "Not confirmed"} />
+              </dl>
+            </div>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+function PartnershipAnswer({ label, value }: { label: string; value: string | null | undefined }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
+      <dd className="mt-1 whitespace-pre-wrap break-words text-sm">{value || "Not provided"}</dd>
     </div>
   );
 }

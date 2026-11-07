@@ -254,9 +254,15 @@ export default function Landing() {
             <a href="#about" className="text-sm font-semibold text-[#17243B]/75 transition-colors hover:text-[#20A99A]">
               About us
             </a>
+            <Link href="/partners" className="text-sm font-semibold text-[#20A99A] transition-colors hover:text-[#17243B]">
+              Become a Partner
+            </Link>
           </nav>
 
           <div className="hidden items-center gap-3 sm:flex">
+            <Link href="/partners" className="hidden rounded-md px-3 py-2 text-sm font-bold text-[#20A99A] transition-colors hover:bg-[#F3F9F9] sm:inline-flex md:hidden">
+              Become a Partner
+            </Link>
             <button type="button" onClick={() => { setAuthMode("login"); setAuthDialogOpen(true); }} className="rounded-md px-4 py-2 text-sm font-bold transition-colors hover:bg-[#F3F9F9]">
               Log in
             </button>
@@ -284,6 +290,7 @@ export default function Landing() {
             <a onClick={() => setMobileMenuOpen(false)} href="#learning-paths" className="block rounded-lg px-3 py-3 text-sm font-semibold hover:bg-[#F3F9F9]">Learning paths</a>
             <a onClick={() => setMobileMenuOpen(false)} href="#why-learnpedia" className="block rounded-lg px-3 py-3 text-sm font-semibold hover:bg-[#F3F9F9]">Why Learnpedia</a>
             <a onClick={() => setMobileMenuOpen(false)} href="#about" className="block rounded-lg px-3 py-3 text-sm font-semibold hover:bg-[#F3F9F9]">About us</a>
+            <Link onClick={() => setMobileMenuOpen(false)} href="/partners" className="block rounded-lg px-3 py-3 text-sm font-semibold text-[#20A99A] hover:bg-[#F3F9F9]">Become a Partner</Link>
             <button type="button" onClick={() => { setAuthMode("register"); setAuthDialogOpen(true); setMobileMenuOpen(false); }} className="mt-2 block w-full rounded-lg px-3 py-3 text-left text-sm font-bold text-[#20A99A] hover:bg-[#F3F9F9]">Create account</button>
           </nav>
         )}

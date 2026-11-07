@@ -15,6 +15,7 @@ This folder contains the starting database schema and row-level security setup f
 - `cbt-exam-topics-migration.sql`: add JAMB/UTME or WAEC/NECO categories and topics to the CBT bank.
 - `events-notifications-migration.sql`: add staff-managed events, student RSVPs, and in-app event notifications.
 - `migrations/20261103000000_course_enrollments.sql`: separate learner enrollment from content access and preserve historical course activity.
+- `migrations/20261107000000_school_partnership_interests.sql`: store school partnership interest submissions with access limited to the server service role.
 
 ## Recommended Supabase setup
 
@@ -22,13 +23,16 @@ This folder contains the starting database schema and row-level security setup f
 2. Open the SQL editor and run `schema.sql` first.
 3. Run `rls.sql` second.
 4. Run `migrations/20261103000000_course_enrollments.sql` to configure the enrollment/progress policies.
-5. Register one user in Learnpedia, promote that user's profile to `super_admin`, then run `seed.sql`.
-6. Add the following environment variables to your Vercel app/server:
+5. Run `migrations/20261107000000_school_partnership_interests.sql` to enable the school partnership form and admin inbox.
+6. Register one user in Learnpedia, promote that user's profile to `super_admin`, then run `seed.sql`.
+7. Add the following environment variables to your Vercel app/server:
    - `SUPABASE_URL` and `SUPABASE_ANON_KEY` (or the legacy `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`)
    - `SUPABASE_SERVICE_ROLE_KEY`
    - `STRIPE_SECRET_KEY`
    - `PAYSTACK_SECRET_KEY`
-7. Restart the server after setting environment variables.
+8. Restart the server after setting environment variables.
+
+The public school partnership form saves submissions through the server. Anonymous and regular authenticated clients have no direct table access; administrators can review submissions in **Admin CMS → School partnerships**.
 
 ## Enrollment and access are separate
 

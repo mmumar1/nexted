@@ -19,6 +19,7 @@ import ResetPassword from "@/pages/reset-password";
 import Cbt from "@/pages/cbt";
 import Events from "@/pages/events";
 import Messages from "@/pages/messages";
+import PartnershipInterestPage from "@/pages/partnership-interest";
 
 const LoginRoute = (props: any) => <Login {...props} />;
 const RegisterRoute = (props: any) => <Register {...props} />;
@@ -30,6 +31,7 @@ function Router() {
       <Route path="/login" component={LoginRoute} />
       <Route path="/login/admin" component={() => <Login initialMode="staff" />} />
       <Route path="/register" component={RegisterRoute} />
+      <Route path="/partners" component={PartnershipInterestPage} />
       <Route path="/forgot-password" component={ForgotPassword} />
       <Route path="/reset-password" component={ResetPassword} />
       <Route path="/dashboard" component={Dashboard} />

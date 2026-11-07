@@ -62,6 +62,17 @@ interface PersistedCmsDraft {
   editingQuizId: string | null;
 }
 
+function getReadPartnershipIds(userId: string): string[] {
+  try {
+    const stored = localStorage.getItem(`admin-read-partnerships:${userId}`);
+    const parsed: unknown = stored ? JSON.parse(stored) : [];
+    return Array.isArray(parsed) && parsed.every((id) => typeof id === "string") ? parsed : [];
+  } catch (error) {
+    console.warn("Could not read viewed partnership submissions:", error);
+    return [];
+  }
+}
+
 interface Analytics {
   totalUsers: number;
   totalCourses: number;
@@ -219,6 +230,7 @@ export default function AdminCms() {
   const [createdInstructor, setCreatedInstructor] = useState<{ fullName: string; email: string; temporaryPassword: string } | null>(null);
   const [announcementDraft, setAnnouncementDraft] = useState({ title: "", message: "" });
   const [paymentReviewNotes, setPaymentReviewNotes] = useState<Record<string, string>>({});
+  const [readPartnershipIds, setReadPartnershipIds] = useState<string[]>([]);
   const courseEditorRef = useRef<HTMLDivElement>(null);
 
   const canManage = !!user && isStaffRole(user.role);
@@ -229,6 +241,7 @@ export default function AdminCms() {
 
   useEffect(() => {
     const draft = readCmsDraft(adminId);
+    if (adminId) setReadPartnershipIds(getReadPartnershipIds(adminId));
     if (draft) {
       if (draft.section) {
         const restrictedSection = (draft.section === "payments" && !canReviewPayments(user?.role))
@@ -317,9 +330,29 @@ export default function AdminCms() {
   });
 
   const partnershipInterests = useQuery<PartnershipInterest[]>({
-    queryKey: ["/api/admin/partnership-interests"],
-    enabled: isSuperAdmin(user?.role) && section === "partnerships",
+    queryKey: ["/api/admin/partnership-interests", adminId],
+    queryFn: () => apiRequest("GET", "/api/admin/partnership-interests"),
+    enabled: isSuperAdmin(user?.role),
+    refetchInterval: 60_000,
   });
+
+  const unreadPartnershipCount = (partnershipInterests.data || [])
+    .filter((submission) => !readPartnershipIds.includes(submission.id))
+    .length;
+
+  useEffect(() => {
+    if (section !== "partnerships" || !adminId || !partnershipInterests.data) return;
+    const nextReadIds = Array.from(new Set([
+      ...readPartnershipIds,
+      ...partnershipInterests.data.map((submission) => submission.id),
+    ]));
+    try {
+      localStorage.setItem(`admin-read-partnerships:${adminId}`, JSON.stringify(nextReadIds));
+      setReadPartnershipIds(nextReadIds);
+    } catch (error) {
+      console.error("Could not mark partnership submissions as viewed:", error);
+    }
+  }, [section, adminId, partnershipInterests.data]);
 
   const courses = useQuery<Course[]>({
     queryKey: ["/api/admin/courses", user?.id],
@@ -624,9 +657,15 @@ export default function AdminCms() {
                 type="button"
                 onClick={() => setSection(id)}
                 className={`flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm font-medium ${section === id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
+                aria-label={id === "partnerships" && unreadPartnershipCount > 0 ? `${label}, ${unreadPartnershipCount} new submissions` : label}
               >
                 <Icon className="h-4 w-4" />
                 {label}
+                {id === "partnerships" && unreadPartnershipCount > 0 && (
+                  <Badge variant="destructive" className="ml-auto min-w-5 justify-center px-1.5">
+                    {unreadPartnershipCount > 99 ? "99+" : unreadPartnershipCount}
+                  </Badge>
+                )}
               </button>
             ))}
           </div>
@@ -641,7 +680,9 @@ export default function AdminCms() {
             </div>
             <select className="h-10 rounded-md border bg-background px-3 text-sm md:hidden" value={section} onChange={(event) => setSection(event.target.value as Section)}>
               {visibleNavItems.map((item) => (
-                <option key={item.id} value={item.id}>{item.label}</option>
+                <option key={item.id} value={item.id}>
+                  {item.label}{item.id === "partnerships" && unreadPartnershipCount > 0 ? ` (${unreadPartnershipCount} new)` : ""}
+                </option>
               ))}
             </select>
           </div>
@@ -2242,64 +2283,67 @@ function PartnershipInterestPanel({
   return (
     <div className="space-y-5">
       <p className="text-sm text-muted-foreground">{submissions.length} school {submissions.length === 1 ? "submission" : "submissions"}</p>
-      {submissions.map((submission) => (
-        <Card key={submission.id}>
-          <CardHeader>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <CardTitle>{submission.schoolName}</CardTitle>
-                <CardDescription className="mt-1">
-                  {submission.schoolAddress} · {submission.cityOrLga}, {submission.state}
-                </CardDescription>
-                <p className="mt-2 text-xs text-muted-foreground">
+      <Accordion type="single" collapsible className="space-y-3">
+        {submissions.map((submission) => (
+          <AccordionItem key={submission.id} value={submission.id} className="rounded-lg border bg-card px-4">
+            <AccordionTrigger className="gap-4 py-4 text-left hover:no-underline">
+              <span className="min-w-0 flex-1">
+                <span className="flex flex-wrap items-center gap-2">
+                  <span className="font-semibold">{submission.schoolName}</span>
+                  <Badge variant="outline">{submission.schoolType}</Badge>
+                </span>
+                <span className="mt-1 block truncate text-sm font-normal text-muted-foreground">
+                  {submission.cityOrLga}, {submission.state} · {submission.contactName} · {submission.emailAddress}
+                </span>
+                <span className="mt-1 block text-xs font-normal text-muted-foreground">
                   Submitted {new Date(submission.submittedAt).toLocaleString()}
-                </p>
+                </span>
+              </span>
+            </AccordionTrigger>
+            <AccordionContent className="space-y-5 pb-5">
+              <p className="text-sm text-muted-foreground">{submission.schoolAddress}</p>
+              <div>
+                <h3 className="mb-3 text-sm font-semibold">Administrative contact</h3>
+                <dl className="grid gap-3 sm:grid-cols-2">
+                  <PartnershipAnswer label="Contact person" value={`${submission.contactName} · ${submission.contactPosition}`} />
+                  <PartnershipAnswer label="Phone" value={submission.phoneNumber} />
+                  <PartnershipAnswer label="Email" value={submission.emailAddress} />
+                  <PartnershipAnswer label="Preferred contact method" value={submission.preferredCommunication} />
+                  <PartnershipAnswer label="Website / social page" value={submission.websiteOrSocialPage} />
+                </dl>
               </div>
-              <Badge variant="outline">{submission.schoolType}</Badge>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            <div>
-              <h3 className="mb-3 text-sm font-semibold">Administrative contact</h3>
-              <dl className="grid gap-3 sm:grid-cols-2">
-                <PartnershipAnswer label="Contact person" value={`${submission.contactName} · ${submission.contactPosition}`} />
-                <PartnershipAnswer label="Phone" value={submission.phoneNumber} />
-                <PartnershipAnswer label="Email" value={submission.emailAddress} />
-                <PartnershipAnswer label="Preferred contact method" value={submission.preferredCommunication} />
-                <PartnershipAnswer label="Website / social page" value={submission.websiteOrSocialPage} />
-              </dl>
-            </div>
-            <div>
-              <h3 className="mb-3 text-sm font-semibold">School profile</h3>
-              <dl className="grid gap-3 sm:grid-cols-2">
-                <PartnershipAnswer label="Approximate student count" value={submission.studentCount} />
-                <PartnershipAnswer label="Classes / levels" value={submission.classesAvailable} />
-                <PartnershipAnswer label="Uses digital learning" value={submission.usesDigitalLearning} />
-                <PartnershipAnswer label="Digital learning details" value={submission.digitalLearningDetails} />
-              </dl>
-            </div>
-            <div>
-              <h3 className="mb-3 text-sm font-semibold">Partnership interests</h3>
-              <dl className="grid gap-3">
-                <PartnershipAnswer label="Areas of interest" value={submission.areasOfInterest.join(", ")} />
-                {submission.otherInterest && <PartnershipAnswer label="Other area" value={submission.otherInterest} />}
-                <PartnershipAnswer label="Challenges / learning needs" value={submission.challengesAndNeeds} />
-                <PartnershipAnswer label="Preferred arrangement" value={submission.partnershipArrangement} />
-                <PartnershipAnswer label="What would make a partnership valuable" value={submission.partnershipValue} />
-              </dl>
-            </div>
-            <div>
-              <h3 className="mb-3 text-sm font-semibold">Next steps</h3>
-              <dl className="grid gap-3 sm:grid-cols-2">
-                <PartnershipAnswer label="Orientation / demonstration" value={submission.orientationInterest} />
-                <PartnershipAnswer label="Preferred follow-up period" value={submission.followUpPeriod} />
-                <PartnershipAnswer label="Additional comments" value={submission.additionalComments} />
-                <PartnershipAnswer label="Acknowledgement" value={submission.acknowledged ? "Confirmed" : "Not confirmed"} />
-              </dl>
-            </div>
-          </CardContent>
-        </Card>
-      ))}
+              <div>
+                <h3 className="mb-3 text-sm font-semibold">School profile</h3>
+                <dl className="grid gap-3 sm:grid-cols-2">
+                  <PartnershipAnswer label="Approximate student count" value={submission.studentCount} />
+                  <PartnershipAnswer label="Classes / levels" value={submission.classesAvailable} />
+                  <PartnershipAnswer label="Uses digital learning" value={submission.usesDigitalLearning} />
+                  <PartnershipAnswer label="Digital learning details" value={submission.digitalLearningDetails} />
+                </dl>
+              </div>
+              <div>
+                <h3 className="mb-3 text-sm font-semibold">Partnership interests</h3>
+                <dl className="grid gap-3">
+                  <PartnershipAnswer label="Areas of interest" value={submission.areasOfInterest.join(", ")} />
+                  {submission.otherInterest && <PartnershipAnswer label="Other area" value={submission.otherInterest} />}
+                  <PartnershipAnswer label="Challenges / learning needs" value={submission.challengesAndNeeds} />
+                  <PartnershipAnswer label="Preferred arrangement" value={submission.partnershipArrangement} />
+                  <PartnershipAnswer label="What would make a partnership valuable" value={submission.partnershipValue} />
+                </dl>
+              </div>
+              <div>
+                <h3 className="mb-3 text-sm font-semibold">Next steps</h3>
+                <dl className="grid gap-3 sm:grid-cols-2">
+                  <PartnershipAnswer label="Orientation / demonstration" value={submission.orientationInterest} />
+                  <PartnershipAnswer label="Preferred follow-up period" value={submission.followUpPeriod} />
+                  <PartnershipAnswer label="Additional comments" value={submission.additionalComments} />
+                  <PartnershipAnswer label="Acknowledgement" value={submission.acknowledged ? "Confirmed" : "Not confirmed"} />
+                </dl>
+              </div>
+            </AccordionContent>
+          </AccordionItem>
+        ))}
+      </Accordion>
     </div>
   );
 }

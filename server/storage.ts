@@ -32,8 +32,10 @@ import {
   type Project,
   type InsertProject,
   type PartnershipInterest,
+  type OrganizationPartnershipInterest,
 } from "../shared/schema.js";
 import type { PartnershipInterestInput } from "../shared/partnership-interest.js";
+import type { OrganizationPartnershipInterestInput } from "../shared/organization-partnership-interest.js";
 import { randomUUID } from "crypto";
 import { SupabaseStorage } from "./supabase-storage.js";
 
@@ -136,6 +138,8 @@ export interface IStorage {
   // School partnership interest
   createPartnershipInterest(input: PartnershipInterestInput): Promise<void>;
   getPartnershipInterests(): Promise<PartnershipInterest[]>;
+  createOrganizationPartnershipInterest(input: OrganizationPartnershipInterestInput): Promise<void>;
+  getOrganizationPartnershipInterests(): Promise<OrganizationPartnershipInterest[]>;
 }
 
 export class MemStorage implements IStorage {
@@ -157,6 +161,7 @@ export class MemStorage implements IStorage {
   private quizAttempts: Map<string, QuizAttempt>;
   private projects: Map<string, Project>;
   private partnershipInterests: Map<string, PartnershipInterest>;
+  private organizationPartnershipInterests: Map<string, OrganizationPartnershipInterest>;
 
   constructor() {
     this.users = new Map();
@@ -177,6 +182,7 @@ export class MemStorage implements IStorage {
     this.quizAttempts = new Map();
     this.projects = new Map();
     this.partnershipInterests = new Map();
+    this.organizationPartnershipInterests = new Map();
 
     this.users.set("admin-local", {
       id: "admin-local",
@@ -1179,6 +1185,20 @@ export class MemStorage implements IStorage {
 
   async getPartnershipInterests(): Promise<PartnershipInterest[]> {
     return Array.from(this.partnershipInterests.values())
+      .sort((a, b) => b.submittedAt.getTime() - a.submittedAt.getTime());
+  }
+
+  async createOrganizationPartnershipInterest(input: OrganizationPartnershipInterestInput): Promise<void> {
+    const id = randomUUID();
+    this.organizationPartnershipInterests.set(id, {
+      ...input,
+      id,
+      submittedAt: new Date(),
+    });
+  }
+
+  async getOrganizationPartnershipInterests(): Promise<OrganizationPartnershipInterest[]> {
+    return Array.from(this.organizationPartnershipInterests.values())
       .sort((a, b) => b.submittedAt.getTime() - a.submittedAt.getTime());
   }
 }

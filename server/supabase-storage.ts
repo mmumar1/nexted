@@ -32,12 +32,14 @@ import type {
   ModuleCompletion,
   Project,
   PartnershipInterest,
+  OrganizationPartnershipInterest,
   Quiz,
   QuizAttempt,
   User,
   UserCourse,
 } from "../shared/schema.js";
 import type { PartnershipInterestInput } from "../shared/partnership-interest.js";
+import type { OrganizationPartnershipInterestInput } from "../shared/organization-partnership-interest.js";
 
 // The server reads the local file during development; production uses platform env vars.
 dotenv.config({ path: ".env.local" });
@@ -1152,6 +1154,51 @@ export class SupabaseStorage implements IStorage {
       partnershipValue: row.partnership_value,
       orientationInterest: row.orientation_interest,
       followUpPeriod: row.follow_up_period,
+      additionalComments: row.additional_comments,
+      acknowledged: row.acknowledged,
+      submittedAt: new Date(row.submitted_at),
+    }));
+  }
+
+  async createOrganizationPartnershipInterest(input: OrganizationPartnershipInterestInput) {
+    const { error } = await this.client.from("organization_partnership_interests").insert({
+      organization_name: input.organizationName,
+      organization_type: input.organizationType,
+      contact_name: input.contactName,
+      contact_role: input.contactRole,
+      email_address: input.emailAddress,
+      phone_number: input.phoneNumber,
+      website_or_social_page: input.websiteOrSocialPage,
+      location: input.location,
+      areas_of_interest: input.areasOfInterest,
+      other_interest: input.otherInterest,
+      partnership_proposal: input.partnershipProposal,
+      partnership_arrangement: input.partnershipArrangement,
+      additional_comments: input.additionalComments,
+      acknowledged: input.acknowledged,
+    });
+    if (error) throw new Error(error.message);
+  }
+
+  async getOrganizationPartnershipInterests(): Promise<OrganizationPartnershipInterest[]> {
+    const { data, error } = await this.client
+      .from("organization_partnership_interests")
+      .select("*")
+      .order("submitted_at", { ascending: false });
+    return (required(data, error) ?? []).map((row: DatabaseRow) => ({
+      id: row.id,
+      organizationName: row.organization_name,
+      organizationType: row.organization_type,
+      contactName: row.contact_name,
+      contactRole: row.contact_role,
+      emailAddress: row.email_address,
+      phoneNumber: row.phone_number,
+      websiteOrSocialPage: row.website_or_social_page,
+      location: row.location,
+      areasOfInterest: row.areas_of_interest,
+      otherInterest: row.other_interest,
+      partnershipProposal: row.partnership_proposal,
+      partnershipArrangement: row.partnership_arrangement,
       additionalComments: row.additional_comments,
       acknowledged: row.acknowledged,
       submittedAt: new Date(row.submitted_at),

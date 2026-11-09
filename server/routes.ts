@@ -25,6 +25,7 @@ import {
   type QuizQuestion,
 } from "../shared/schema.js";
 import { partnershipInterestInputSchema } from "../shared/partnership-interest.js";
+import { organizationPartnershipInterestInputSchema } from "../shared/organization-partnership-interest.js";
 import { z } from "zod";
 import { createSupabaseAdminClient, createSupabaseAuthClient } from "./supabase-admin.js";
 import { compareModuleOrder, isModuleWithinFreeTopLevelTier } from "../shared/module-utils.js";
@@ -250,6 +251,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Could not load school partnership interests:", error);
       res.status(500).json({ error: "Could not load partnership submissions." });
+    }
+  });
+
+  app.post("/api/organization-partnership-interests", async (req, res) => {
+    try {
+      const input = organizationPartnershipInterestInputSchema.parse(req.body);
+      await storage.createOrganizationPartnershipInterest(input);
+      res.status(201).json({ success: true });
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
+      console.error("Could not save organization partnership interest:", error);
+      res.status(500).json({ error: "Could not submit the organization partnership form. Please try again." });
+    }
+  });
+
+  app.get("/api/admin/organization-partnership-interests", async (req, res) => {
+    try {
+      if (!(await requireAuthenticatedPartnerAdmin(req, res))) return;
+      res.json(await storage.getOrganizationPartnershipInterests());
+    } catch (error) {
+      console.error("Could not load organization partnership interests:", error);
+      res.status(500).json({ error: "Could not load organization partnership submissions." });
     }
   });
 

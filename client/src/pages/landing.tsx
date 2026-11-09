@@ -4,6 +4,8 @@ import {
   ArrowRight,
   BriefcaseBusiness,
   Check,
+  ChevronLeft,
+  ChevronRight,
   GraduationCap,
   Menu,
   Quote,
@@ -28,31 +30,7 @@ const brand = {
   background: "#F3F9F9",
 };
 
-const heroSlides = [
-  {
-    title: "Build the foundations for what comes next.",
-    description:
-      "Explore structured learning for SS1, SS2, and SS3, and make steady progress toward your academic goals.",
-    image:
-      "https://images.unsplash.com/photo-1503676260728-1c00da094a0b?auto=format&fit=crop&w=2000&q=85",
-    imageAlt: "Students learning together in a bright classroom",
-  },
-  {
-    title: "Learning without limits.",
-    description:
-      "Find learning opportunities that support your university journey and help you deepen your understanding.",
-    image: "/images/university-learning.svg",
-    imageAlt: "Illustration of a university learner studying among books",
-  },
-  {
-    title: "Make room for your next skill.",
-    description:
-      "Discover professional learning designed to help you build knowledge and move toward your ambitions.",
-    image:
-      "https://images.unsplash.com/photo-1521737711867-e3b97375f902?auto=format&fit=crop&w=2000&q=85",
-    imageAlt: "Colleagues sharing ideas during a learning session",
-  },
-];
+const heroImage = "https://images.unsplash.com/photo-1521737711867-e3b97375f902?auto=format&fit=crop&w=2000&q=85";
 
 const partnerSlots = [
   "Education partner",
@@ -89,27 +67,38 @@ const learningPaths = [
   },
 ];
 
-const studentStories = [
+const testimonials = [
   {
-    image:
-      "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=900&q=85",
-    imageAlt: "Illustrative portrait representing a secondary school learner",
-    quote: "I can revisit topics at my own pace, and the quizzes help me see what I should practise next.",
-    name: "Amina Yusuf",
+    initials: "KA",
+    name: "Khadijah Anas",
+    detail: "SS1 Student | Physics",
+    quote: "Physics was one of the subjects I struggled with, but Learnpedia has helped me understand it better. I particularly appreciate the lesson explanations and the opportunity to study independently and revisit lessons whenever I need to.",
   },
   {
-    image:
-      "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=900&q=85",
-    imageAlt: "Illustrative portrait representing a university learner",
-    quote: "The structured lessons make it easier to build a steady study routine alongside my university work.",
-    name: "Chidi Okafor",
+    initials: "A",
+    name: "Aminu",
+    detail: "SS1 Student | Science and Mathematics",
+    quote: "I sometimes struggled to understand difficult topics and remember what I had studied, especially in Science, Mathematics and Chemistry. Learnpedia's explanations and examples have made these topics easier to understand. I also like being able to learn at my own pace.",
   },
   {
-    image:
-      "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=900&q=85",
-    imageAlt: "Illustrative portrait representing a professional learner",
-    quote: "I like being able to fit professional learning around my schedule and keep developing new skills.",
-    name: "Zainab Bello",
+    initials: "S",
+    name: "Salmerh",
+    detail: "SS3 Student | Independent Learning",
+    quote: "Studying on my own used to be confusing and sometimes boring, which made me rely on cramming. Learnpedia's simple explanations and step-by-step examples have helped me understand topics instead of just memorising them. The learning experience is also less stressful. I recommend Learnpedia 100%!",
+  },
+  {
+    initials: "A",
+    name: "Arabie",
+    detail: "Chemistry Graduate | Platform Review",
+    quote: "It was amazing, seriously. I can't even differentiate between this Learnpedia and Coursera.",
+    summary: "Arabie appreciated the video tutorials, audio lessons, HD video quality, clear sound and easy-to-understand interface.",
+    closingQuote: "Thank you, keep it up and I wish you all the best. That's a great milestone.",
+  },
+  {
+    initials: "N",
+    name: "Nura",
+    detail: "Pharmacy Student",
+    quote: "It will actually be a stepping stone for most local communities and villages that lack quality teachers.",
   },
 ];
 
@@ -189,8 +178,10 @@ function Brand() {
 export default function Landing() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
-  const [heroIndex, setHeroIndex] = useState(0);
-  const [storyIndex, setStoryIndex] = useState(0);
+  const [testimonialIndex, setTestimonialIndex] = useState(0);
+  const [testimonialHovered, setTestimonialHovered] = useState(false);
+  const [testimonialFocused, setTestimonialFocused] = useState(false);
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
   const [authDialogOpen, setAuthDialogOpen] = useState(false);
@@ -200,25 +191,26 @@ export default function Landing() {
   }, [user, setLocation]);
 
   useEffect(() => {
-    const timer = window.setInterval(
-      () => setHeroIndex((current) => (current + 1) % heroSlides.length),
-      6000,
-    );
-    return () => window.clearInterval(timer);
+    const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const updatePreference = () => setPrefersReducedMotion(mediaQuery.matches);
+    updatePreference();
+    mediaQuery.addEventListener("change", updatePreference);
+    return () => mediaQuery.removeEventListener("change", updatePreference);
   }, []);
 
   useEffect(() => {
+    if (testimonialHovered || testimonialFocused || prefersReducedMotion) return;
     const timer = window.setInterval(
-      () => setStoryIndex((current) => (current + 1) % studentStories.length),
+      () => setTestimonialIndex((current) => (current + 1) % testimonials.length),
       7000,
     );
     return () => window.clearInterval(timer);
-  }, []);
+  }, [testimonialHovered, testimonialFocused, prefersReducedMotion, testimonialIndex]);
 
   if (user) return null;
 
-  const activeHero = heroSlides[heroIndex];
-  const activeStory = studentStories[storyIndex];
+  const activeTestimonial = testimonials[testimonialIndex];
+  const showTestimonialAutoplay = !testimonialHovered && !testimonialFocused && !prefersReducedMotion;
   return (
     <main className="min-h-screen" style={{ backgroundColor: brand.background, color: brand.navy }}>
       <Dialog open={authDialogOpen} onOpenChange={setAuthDialogOpen}>
@@ -249,7 +241,7 @@ export default function Landing() {
               Learning paths
             </a>
             <a href="#why-learnpedia" className="text-sm font-semibold text-[#17243B]/75 transition-colors hover:text-[#20A99A]">
-              Why Learnpedia
+              Feedback
             </a>
             <a href="#about" className="text-sm font-semibold text-[#17243B]/75 transition-colors hover:text-[#20A99A]">
               About us
@@ -288,7 +280,7 @@ export default function Landing() {
         {mobileMenuOpen && (
           <nav aria-label="Mobile navigation" className="border-t border-[#17243B]/10 bg-white px-4 py-3 sm:hidden">
             <a onClick={() => setMobileMenuOpen(false)} href="#learning-paths" className="block rounded-lg px-3 py-3 text-sm font-semibold hover:bg-[#F3F9F9]">Learning paths</a>
-            <a onClick={() => setMobileMenuOpen(false)} href="#why-learnpedia" className="block rounded-lg px-3 py-3 text-sm font-semibold hover:bg-[#F3F9F9]">Why Learnpedia</a>
+            <a onClick={() => setMobileMenuOpen(false)} href="#why-learnpedia" className="block rounded-lg px-3 py-3 text-sm font-semibold hover:bg-[#F3F9F9]">Feedback</a>
             <a onClick={() => setMobileMenuOpen(false)} href="#about" className="block rounded-lg px-3 py-3 text-sm font-semibold hover:bg-[#F3F9F9]">About us</a>
             <Link onClick={() => setMobileMenuOpen(false)} href="/partners" className="block rounded-lg px-3 py-3 text-sm font-semibold text-[#20A99A] hover:bg-[#F3F9F9]">Become a Partner</Link>
             <button type="button" onClick={() => { setAuthMode("register"); setAuthDialogOpen(true); setMobileMenuOpen(false); }} className="mt-2 block w-full rounded-lg px-3 py-3 text-left text-sm font-bold text-[#20A99A] hover:bg-[#F3F9F9]">Create account</button>
@@ -297,28 +289,24 @@ export default function Landing() {
       </header>
 
       <section
-        aria-label="Learnpedia highlights"
-        aria-roledescription="carousel"
+        aria-label="Learn Beyond Limits"
         className="relative isolate flex min-h-[590px] items-center overflow-hidden bg-[#17243B] sm:min-h-[650px]"
       >
         <div
-          key={activeHero.image}
-          className="absolute inset-0 bg-cover bg-center transition-opacity duration-700"
           role="img"
-          aria-label={activeHero.imageAlt}
+          aria-label="Colleagues sharing ideas during a learning session"
+          className="absolute inset-0 bg-cover bg-center"
           style={{
-            backgroundImage: `linear-gradient(90deg, rgba(23,36,59,.94) 0%, rgba(23,36,59,.80) 48%, rgba(23,36,59,.28) 100%), url("${activeHero.image}")`,
+            backgroundImage: `linear-gradient(90deg, rgba(23,36,59,.94) 0%, rgba(23,36,59,.80) 48%, rgba(23,36,59,.42) 100%), url("${heroImage}")`,
           }}
         />
         <div className="relative mx-auto w-full max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
           <div className="max-w-2xl">
             <h1 className="mt-7 max-w-xl text-balance text-4xl font-extrabold leading-[1.08] tracking-tight text-white sm:text-5xl lg:text-6xl">
-              {heroIndex === 0 ? (
-                <>One platform. Different ambitions. <span className="text-[#FFA500]">Endless possibilities.</span></>
-              ) : activeHero.title}
+              Learn <span className="text-[#FFA500]">Beyond Limits</span>
             </h1>
             <p className="mt-6 max-w-xl text-base leading-7 text-white/80 sm:text-lg sm:leading-8">
-              {activeHero.description}
+              Learn, grow, and build skills for the future with Learnpedia.
             </p>
             <div className="mt-8 grid grid-cols-2 gap-3 sm:flex sm:flex-row sm:gap-4">
               <Button type="button" size="lg" className="h-auto min-h-12 w-full whitespace-normal rounded-lg px-2.5 py-3 text-center text-xs font-bold leading-tight text-[#17243B] hover:opacity-90 sm:w-auto sm:px-6 sm:text-base" style={{ backgroundColor: brand.teal }} onClick={() => { setAuthMode("register"); setAuthDialogOpen(true); }}>
@@ -329,21 +317,6 @@ export default function Landing() {
               </Button>
             </div>
           </div>
-
-          <div className="mt-12 border-t border-white/20 pt-5 sm:max-w-2xl">
-            <div className="flex items-center gap-2" aria-label={`Slide ${heroIndex + 1} of ${heroSlides.length}`}>
-              {heroSlides.map((slide, index) => (
-                <span
-                  key={slide.title}
-                  aria-current={index === heroIndex ? "true" : undefined}
-                  className={`h-2 rounded-full transition-all ${index === heroIndex ? "w-9 bg-[#FFA500]" : "w-2 bg-white/60"}`}
-                />
-              ))}
-            </div>
-          </div>
-        </div>
-        <div className="absolute bottom-0 right-0 hidden bg-[#FFA500] px-8 py-4 text-xs font-extrabold tracking-[0.18em] text-[#17243B] lg:block">
-          LEARN WITH PURPOSE
         </div>
       </section>
 
@@ -475,50 +448,82 @@ export default function Landing() {
       <section id="why-learnpedia" className="scroll-mt-24 py-20 sm:py-24">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="mx-auto max-w-2xl text-center">
-            <p className="text-sm font-extrabold tracking-[0.17em] text-[#20A99A]">WHY OUR STUDENTS LOVE US</p>
             <h2 className="mt-3 text-balance text-3xl font-extrabold tracking-tight text-[#17243B] sm:text-4xl">
-              A little inspiration for your own journey.
+              What People Say About Learnpedia
             </h2>
             <p className="mt-4 leading-7 text-[#17243B]/65">
-              These fictional sample stories illustrate the section. Replace them with real testimonials and approved learner photos before publishing.
+              Discover how students, graduates and other learners experience Learnpedia and how we are making learning more accessible.
             </p>
           </div>
 
           <div
-            className="relative mx-auto mt-12 grid max-w-5xl overflow-hidden rounded-3xl border border-[#17243B]/10 bg-white shadow-[0_16px_50px_rgba(23,36,59,0.08)] md:grid-cols-[0.8fr_1.2fr]"
+            aria-roledescription="carousel"
+            aria-label="Learnpedia learner feedback"
+            className="mx-auto mt-12 max-w-4xl"
+            onMouseEnter={() => setTestimonialHovered(true)}
+            onMouseLeave={() => setTestimonialHovered(false)}
+            onFocusCapture={() => setTestimonialFocused(true)}
+            onBlurCapture={() => setTestimonialFocused(false)}
           >
-            <div className="relative min-h-[300px] bg-[#17243B] md:min-h-[390px]">
-              <img
-                key={activeStory.image}
-                src={activeStory.image}
-                alt={activeStory.imageAlt}
-                className="absolute inset-0 h-full w-full object-cover"
-                loading="lazy"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-[#17243B]/70 to-transparent md:bg-gradient-to-r md:from-transparent md:to-[#17243B]/10" />
-            </div>
-            <div className="flex min-h-[300px] flex-col justify-between p-7 sm:p-10 md:min-h-[390px]">
-              <div>
-                <Quote className="h-9 w-9 text-[#FFA500]" aria-hidden="true" />
-                <p aria-live="polite" className="mt-7 text-xl font-semibold leading-8 text-[#17243B] sm:text-2xl sm:leading-9">
-                  “{activeStory.quote}”
-                </p>
-              </div>
-              <div className="mt-8 flex items-end justify-between gap-4 border-t border-[#17243B]/10 pt-5">
+            <article
+              key={activeTestimonial.name}
+              aria-roledescription="slide"
+              aria-label={`${testimonialIndex + 1} of ${testimonials.length}: ${activeTestimonial.name}`}
+              aria-live={showTestimonialAutoplay ? "off" : "polite"}
+              className="min-h-[340px] animate-in fade-in-0 duration-300 motion-reduce:animate-none rounded-3xl border border-[#17243B]/10 bg-white p-6 shadow-[0_16px_50px_rgba(23,36,59,0.08)] sm:min-h-[300px] sm:p-10"
+            >
+              <div className="flex items-center gap-4">
+                <div
+                  aria-hidden="true"
+                  className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#20A99A] text-lg font-extrabold text-white"
+                >
+                  {activeTestimonial.initials}
+                </div>
                 <div>
-                  <p className="font-bold text-[#17243B]">{activeStory.name}</p>
+                  <h3 className="font-bold text-[#17243B]">{activeTestimonial.name}</h3>
+                  <p className="text-sm text-[#17243B]/65">{activeTestimonial.detail}</p>
                 </div>
               </div>
+              <div className="mt-7">
+                <Quote className="h-9 w-9 text-[#FFA500]" aria-hidden="true" />
+                <blockquote className="mt-4 text-lg font-semibold leading-8 text-[#17243B] sm:text-xl">
+                  “{activeTestimonial.quote}”
+                </blockquote>
+                {activeTestimonial.summary && (
+                  <p className="mt-4 leading-7 text-[#17243B]/70">{activeTestimonial.summary}</p>
+                )}
+                {activeTestimonial.closingQuote && (
+                  <blockquote className="mt-4 border-l-4 border-[#20A99A] pl-4 leading-7 text-[#17243B]">
+                    “{activeTestimonial.closingQuote}”
+                  </blockquote>
+                )}
+              </div>
+            </article>
+            <div className="mt-5 flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  aria-label="Previous feedback"
+                  onClick={() => setTestimonialIndex((current) => (current - 1 + testimonials.length) % testimonials.length)}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  aria-label="Next feedback"
+                  onClick={() => setTestimonialIndex((current) => (current + 1) % testimonials.length)}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+              <p className="text-sm text-[#17243B]/60" aria-live="polite">
+                {testimonialIndex + 1} of {testimonials.length}
+              </p>
             </div>
-          </div>
-          <div className="mt-5 flex justify-center gap-2" aria-label={`Student story ${storyIndex + 1} of ${studentStories.length}`}>
-            {studentStories.map((story, index) => (
-              <span
-                key={story.image}
-                aria-current={index === storyIndex ? "true" : undefined}
-                className={`h-2 rounded-full transition-all ${index === storyIndex ? "w-8 bg-[#20A99A]" : "w-2 bg-[#17243B]/25"}`}
-              />
-            ))}
           </div>
         </div>
       </section>

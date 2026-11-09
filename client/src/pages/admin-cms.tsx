@@ -18,7 +18,7 @@ import { supabase } from "@/lib/supabase";
 import { QuizMarkdownEditor } from "@/components/quiz/quiz-markdown";
 import { LessonSpeechControls } from "@/components/course/lesson-speech-controls";
 import type { AnnouncementRecord } from "@/lib/announcements";
-import type { CbtExamType, Course, EventRecord, Module, PartnershipInterest, QuizQuestion, User } from "@shared/schema";
+import type { CbtExamType, Course, EventRecord, Module, OrganizationPartnershipInterest, PartnershipInterest, QuizQuestion, User } from "@shared/schema";
 import { Archive, BarChart3, BookOpen, CalendarDays, ClipboardList, CreditCard, Download, FileQuestion, FileUp, Handshake, LayoutDashboard, Pencil, Plus, RotateCcw, Send, Settings2, Trash2, UserRound, Users, X } from "lucide-react";
 import { isInitialEmptyQuizQuestion, parseQuizCsv, type QuizCsvPreview } from "@/lib/quiz-csv";
 import { formatDateTimeForZone, localDateTimeToUtc } from "@shared/event-utils";
@@ -174,7 +174,7 @@ const navItems: Array<{ id: Section; label: string; icon: typeof LayoutDashboard
   { id: "analytics", label: "Analytics", icon: BarChart3 },
   { id: "announcements", label: "Announcements", icon: Plus },
   { id: "payments", label: "Payments", icon: CreditCard },
-  { id: "partnerships", label: "School partnerships", icon: Handshake },
+  { id: "partnerships", label: "Partner applications", icon: Handshake },
 ];
 
 const isStaffRole = (role?: string | null) => ["admin", "super_admin", "instructor"].includes(role || "");
@@ -335,16 +335,29 @@ export default function AdminCms() {
     enabled: isSuperAdmin(user?.role),
     refetchInterval: 60_000,
   });
+  const organizationPartnershipInterests = useQuery<OrganizationPartnershipInterest[]>({
+    queryKey: ["/api/admin/organization-partnership-interests", adminId],
+    queryFn: () => apiRequest("GET", "/api/admin/organization-partnership-interests"),
+    enabled: isSuperAdmin(user?.role),
+    refetchInterval: 60_000,
+  });
 
-  const unreadPartnershipCount = (partnershipInterests.data || [])
-    .filter((submission) => !readPartnershipIds.includes(submission.id))
-    .length;
+  const unreadPartnershipCount =
+    (partnershipInterests.data || []).filter((submission) => !readPartnershipIds.includes(submission.id)).length
+    + (organizationPartnershipInterests.data || [])
+      .filter((submission) => !readPartnershipIds.includes(`organization:${submission.id}`)).length;
 
   useEffect(() => {
-    if (section !== "partnerships" || !adminId || !partnershipInterests.data) return;
+    if (
+      section !== "partnerships"
+      || !adminId
+      || !partnershipInterests.data
+      || !organizationPartnershipInterests.data
+    ) return;
     const nextReadIds = Array.from(new Set([
       ...readPartnershipIds,
       ...partnershipInterests.data.map((submission) => submission.id),
+      ...organizationPartnershipInterests.data.map((submission) => `organization:${submission.id}`),
     ]));
     try {
       localStorage.setItem(`admin-read-partnerships:${adminId}`, JSON.stringify(nextReadIds));
@@ -352,7 +365,7 @@ export default function AdminCms() {
     } catch (error) {
       console.error("Could not mark partnership submissions as viewed:", error);
     }
-  }, [section, adminId, partnershipInterests.data]);
+  }, [section, adminId, partnershipInterests.data, organizationPartnershipInterests.data]);
 
   const courses = useQuery<Course[]>({
     queryKey: ["/api/admin/courses", user?.id],
@@ -1023,6 +1036,10 @@ export default function AdminCms() {
               isLoading={partnershipInterests.isLoading}
               isError={partnershipInterests.isError}
               onRefresh={() => partnershipInterests.refetch()}
+              organizationSubmissions={organizationPartnershipInterests.data || []}
+              organizationsLoading={organizationPartnershipInterests.isLoading}
+              organizationsError={organizationPartnershipInterests.isError}
+              onRefreshOrganizations={() => organizationPartnershipInterests.refetch()}
             />
           )}
         </div>
@@ -2257,6 +2274,68 @@ function PartnershipInterestPanel({
   isLoading,
   isError,
   onRefresh,
+  organizationSubmissions,
+  organizationsLoading,
+  organizationsError,
+  onRefreshOrganizations,
+}: {
+  submissions: PartnershipInterest[];
+  isLoading: boolean;
+  isError: boolean;
+  onRefresh: () => void;
+  organizationSubmissions: OrganizationPartnershipInterest[];
+  organizationsLoading: boolean;
+  organizationsError: boolean;
+  onRefreshOrganizations: () => void;
+}) {
+  const [activeTab, setActiveTab] = useState<"schools" | "organizations">("schools");
+
+  return (
+    <div className="space-y-5">
+      <div role="tablist" aria-label="Partner application types" className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "schools"}
+          variant={activeTab === "schools" ? "default" : "outline"}
+          onClick={() => setActiveTab("schools")}
+        >
+          School applications ({submissions.length})
+        </Button>
+        <Button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "organizations"}
+          variant={activeTab === "organizations" ? "default" : "outline"}
+          onClick={() => setActiveTab("organizations")}
+        >
+          Other organisations ({organizationSubmissions.length})
+        </Button>
+      </div>
+      {activeTab === "schools" ? (
+        <SchoolPartnershipInterestList
+          submissions={submissions}
+          isLoading={isLoading}
+          isError={isError}
+          onRefresh={onRefresh}
+        />
+      ) : (
+        <OrganizationPartnershipInterestList
+          submissions={organizationSubmissions}
+          isLoading={organizationsLoading}
+          isError={organizationsError}
+          onRefresh={onRefreshOrganizations}
+        />
+      )}
+    </div>
+  );
+}
+
+function SchoolPartnershipInterestList({
+  submissions,
+  isLoading,
+  isError,
+  onRefresh,
 }: {
   submissions: PartnershipInterest[];
   isLoading: boolean;
@@ -2264,20 +2343,20 @@ function PartnershipInterestPanel({
   onRefresh: () => void;
 }) {
   if (isLoading) {
-    return <Card><CardContent className="p-8 text-center text-muted-foreground">Loading school partnership submissions...</CardContent></Card>;
+    return <Card><CardContent className="p-8 text-center text-muted-foreground">Loading school applications...</CardContent></Card>;
   }
   if (isError) {
     return (
       <Card>
         <CardContent className="p-8 text-center">
-          <p className="text-destructive">Could not load school partnership submissions.</p>
+          <p className="text-destructive">Could not load school applications.</p>
           <Button variant="outline" className="mt-4" onClick={onRefresh}>Try again</Button>
         </CardContent>
       </Card>
     );
   }
   if (submissions.length === 0) {
-    return <Card><CardContent className="p-8 text-center text-muted-foreground">No school partnership submissions have been received yet.</CardContent></Card>;
+    return <Card><CardContent className="p-8 text-center text-muted-foreground">No school applications have been received yet.</CardContent></Card>;
   }
 
   return (
@@ -2336,6 +2415,84 @@ function PartnershipInterestPanel({
                 <dl className="grid gap-3 sm:grid-cols-2">
                   <PartnershipAnswer label="Orientation / demonstration" value={submission.orientationInterest} />
                   <PartnershipAnswer label="Preferred follow-up period" value={submission.followUpPeriod} />
+                  <PartnershipAnswer label="Additional comments" value={submission.additionalComments} />
+                  <PartnershipAnswer label="Acknowledgement" value={submission.acknowledged ? "Confirmed" : "Not confirmed"} />
+                </dl>
+              </div>
+            </AccordionContent>
+          </AccordionItem>
+        ))}
+      </Accordion>
+    </div>
+  );
+}
+
+function OrganizationPartnershipInterestList({
+  submissions,
+  isLoading,
+  isError,
+  onRefresh,
+}: {
+  submissions: OrganizationPartnershipInterest[];
+  isLoading: boolean;
+  isError: boolean;
+  onRefresh: () => void;
+}) {
+  if (isLoading) {
+    return <Card><CardContent className="p-8 text-center text-muted-foreground">Loading other organisation applications...</CardContent></Card>;
+  }
+  if (isError) {
+    return (
+      <Card>
+        <CardContent className="p-8 text-center">
+          <p className="text-destructive">Could not load other organisation applications.</p>
+          <Button variant="outline" className="mt-4" onClick={onRefresh}>Try again</Button>
+        </CardContent>
+      </Card>
+    );
+  }
+  if (submissions.length === 0) {
+    return <Card><CardContent className="p-8 text-center text-muted-foreground">No other organisation applications have been received yet.</CardContent></Card>;
+  }
+
+  return (
+    <div className="space-y-5">
+      <p className="text-sm text-muted-foreground">{submissions.length} organisation {submissions.length === 1 ? "application" : "applications"}</p>
+      <Accordion type="single" collapsible className="space-y-3">
+        {submissions.map((submission) => (
+          <AccordionItem key={submission.id} value={submission.id} className="rounded-lg border bg-card px-4">
+            <AccordionTrigger className="gap-4 py-4 text-left hover:no-underline">
+              <span className="min-w-0 flex-1">
+                <span className="flex flex-wrap items-center gap-2">
+                  <span className="font-semibold">{submission.organizationName}</span>
+                  <Badge variant="outline">{submission.organizationType}</Badge>
+                </span>
+                <span className="mt-1 block truncate text-sm font-normal text-muted-foreground">
+                  {submission.location} · {submission.contactName} · {submission.emailAddress}
+                </span>
+                <span className="mt-1 block text-xs font-normal text-muted-foreground">
+                  Submitted {new Date(submission.submittedAt).toLocaleString()}
+                </span>
+              </span>
+            </AccordionTrigger>
+            <AccordionContent className="space-y-5 pb-5">
+              <div>
+                <h3 className="mb-3 text-sm font-semibold">Contact person</h3>
+                <dl className="grid gap-3 sm:grid-cols-2">
+                  <PartnershipAnswer label="Name and role" value={`${submission.contactName} · ${submission.contactRole}`} />
+                  <PartnershipAnswer label="Phone" value={submission.phoneNumber} />
+                  <PartnershipAnswer label="Email" value={submission.emailAddress} />
+                  <PartnershipAnswer label="Website / social page" value={submission.websiteOrSocialPage} />
+                  <PartnershipAnswer label="Location" value={submission.location} />
+                </dl>
+              </div>
+              <div>
+                <h3 className="mb-3 text-sm font-semibold">Partnership interests</h3>
+                <dl className="grid gap-3">
+                  <PartnershipAnswer label="Areas of interest" value={submission.areasOfInterest.join(", ")} />
+                  {submission.otherInterest && <PartnershipAnswer label="Other area" value={submission.otherInterest} />}
+                  <PartnershipAnswer label="Proposed collaboration" value={submission.partnershipProposal} />
+                  <PartnershipAnswer label="Preferred arrangement" value={submission.partnershipArrangement} />
                   <PartnershipAnswer label="Additional comments" value={submission.additionalComments} />
                   <PartnershipAnswer label="Acknowledgement" value={submission.acknowledged ? "Confirmed" : "Not confirmed"} />
                 </dl>

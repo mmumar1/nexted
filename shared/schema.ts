@@ -502,6 +502,27 @@ export const partnershipInterests = pgTable("partnership_interests", {
 
 export type PartnershipInterest = typeof partnershipInterests.$inferSelect;
 
+export const organizationPartnershipInterests = pgTable("organization_partnership_interests", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationName: text("organization_name").notNull(),
+  organizationType: text("organization_type").notNull(),
+  contactName: text("contact_name").notNull(),
+  contactRole: text("contact_role").notNull(),
+  emailAddress: text("email_address").notNull(),
+  phoneNumber: text("phone_number").notNull(),
+  websiteOrSocialPage: text("website_or_social_page"),
+  location: text("location").notNull(),
+  areasOfInterest: text("areas_of_interest").array().notNull(),
+  otherInterest: text("other_interest"),
+  partnershipProposal: text("partnership_proposal").notNull(),
+  partnershipArrangement: text("partnership_arrangement").notNull(),
+  additionalComments: text("additional_comments"),
+  acknowledged: boolean("acknowledged").notNull().default(false),
+  submittedAt: timestamp("submitted_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type OrganizationPartnershipInterest = typeof organizationPartnershipInterests.$inferSelect;
+
 // Login schema
 export const loginSchema = z.object({
   email: z.string().email("Please enter a valid email"),

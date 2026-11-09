@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import { Link } from "wouter";
 import { BrandLogo } from "@/components/brand-logo";
 import { useMutation } from "@tanstack/react-query";
-import { ArrowLeft, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, Building2, CheckCircle2, School } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -11,10 +11,25 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { partnershipInterestTypes, type PartnershipInterestInput } from "@shared/partnership-interest";
+import {
+  organizationPartnershipInterestTypes,
+  organizationPartnershipTypes,
+  type OrganizationPartnershipInterestInput,
+} from "@shared/organization-partnership-interest";
+
+type ApplicationType = "choose" | "school" | "organization";
 
 type PartnershipInterestForm = Omit<PartnershipInterestInput, "partnershipArrangement" | "orientationInterest"> & {
   partnershipArrangement: PartnershipInterestInput["partnershipArrangement"] | "";
   orientationInterest: PartnershipInterestInput["orientationInterest"] | "";
+};
+
+type OrganizationPartnershipInterestForm = Omit<
+  OrganizationPartnershipInterestInput,
+  "organizationType" | "partnershipArrangement"
+> & {
+  organizationType: OrganizationPartnershipInterestInput["organizationType"] | "";
+  partnershipArrangement: OrganizationPartnershipInterestInput["partnershipArrangement"] | "";
 };
 
 const initialForm: PartnershipInterestForm = {
@@ -40,6 +55,23 @@ const initialForm: PartnershipInterestForm = {
   partnershipValue: "",
   orientationInterest: "",
   followUpPeriod: null,
+  additionalComments: null,
+  acknowledged: false,
+};
+
+const initialOrganizationForm: OrganizationPartnershipInterestForm = {
+  organizationName: "",
+  organizationType: "",
+  contactName: "",
+  contactRole: "",
+  emailAddress: "",
+  phoneNumber: "",
+  websiteOrSocialPage: null,
+  location: "",
+  areasOfInterest: [],
+  otherInterest: null,
+  partnershipProposal: "",
+  partnershipArrangement: "",
   additionalComments: null,
   acknowledged: false,
 };
@@ -118,12 +150,24 @@ function SelectField({
 }
 
 export default function PartnershipInterestPage() {
+  const [applicationType, setApplicationType] = useState<ApplicationType>("choose");
   const [form, setForm] = useState(initialForm);
-  const [submitted, setSubmitted] = useState(false);
+  const [organizationForm, setOrganizationForm] = useState<OrganizationPartnershipInterestForm>(initialOrganizationForm);
+  const [schoolSubmitted, setSchoolSubmitted] = useState(false);
+  const [organizationSubmitted, setOrganizationSubmitted] = useState(false);
   const { toast } = useToast();
   const submit = useMutation({
     mutationFn: () => apiRequest("POST", "/api/partnership-interests", form),
-    onSuccess: () => setSubmitted(true),
+    onSuccess: () => setSchoolSubmitted(true),
+    onError: (error: Error) => toast({
+      title: "We could not submit your form",
+      description: error.message,
+      variant: "destructive",
+    }),
+  });
+  const organizationSubmit = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/organization-partnership-interests", organizationForm),
+    onSuccess: () => setOrganizationSubmitted(true),
     onError: (error: Error) => toast({
       title: "We could not submit your form",
       description: error.message,
@@ -134,12 +178,26 @@ export default function PartnershipInterestPage() {
   const setField = <K extends keyof PartnershipInterestForm>(key: K, value: PartnershipInterestForm[K]) => {
     setForm((current) => ({ ...current, [key]: value }));
   };
+  const setOrganizationField = <K extends keyof OrganizationPartnershipInterestForm>(
+    key: K,
+    value: OrganizationPartnershipInterestForm[K],
+  ) => {
+    setOrganizationForm((current) => ({ ...current, [key]: value }));
+  };
   const toggleInterest = (interest: typeof partnershipInterestTypes[number], checked: boolean) => {
     setForm((current) => ({
       ...current,
       areasOfInterest: checked
         ? [...current.areasOfInterest, interest]
         : current.areasOfInterest.filter((item) => item !== interest),
+    }));
+  };
+  const toggleOrganizationInterest = (interest: typeof organizationPartnershipInterestTypes[number], checked: boolean) => {
+    setOrganizationForm((current) => ({
+        ...current,
+        areasOfInterest: checked
+          ? [...current.areasOfInterest, interest]
+          : current.areasOfInterest.filter((item) => item !== interest),
     }));
   };
 
@@ -151,7 +209,139 @@ export default function PartnershipInterestPage() {
           Learnpedia home
         </Link>
         <Card>
+          {applicationType === "choose" ? (
+            <>
+              <CardHeader className="text-center">
+                <div className="mb-2 flex justify-center">
+                  <BrandLogo className="h-14 w-auto" />
+                </div>
+                <CardTitle className="text-2xl sm:text-3xl">Partner with Learnpedia</CardTitle>
+                <CardDescription className="text-sm leading-6">
+                  Choose the application that best describes your institution. Submitting an application records interest and does not create a binding partnership or financial commitment.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-4 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => setApplicationType("school")}
+                  className="rounded-xl border p-6 text-left transition-colors hover:border-primary hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <School className="mb-4 h-8 w-8 text-primary" aria-hidden="true" />
+                  <span className="block text-lg font-semibold">Apply as a school</span>
+                  <span className="mt-2 block text-sm text-muted-foreground">
+                    For primary, secondary, and other schools interested in learning partnerships.
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setApplicationType("organization")}
+                  className="rounded-xl border p-6 text-left transition-colors hover:border-primary hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <Building2 className="mb-4 h-8 w-8 text-primary" aria-hidden="true" />
+                  <span className="block text-lg font-semibold">Apply as another organisation</span>
+                  <span className="mt-2 block text-sm text-muted-foreground">
+                    For nonprofits, education providers, businesses, public agencies, and community groups.
+                  </span>
+                </button>
+              </CardContent>
+            </>
+          ) : applicationType === "organization" ? (
+            <>
+              <CardHeader>
+                <Button type="button" variant="ghost" className="mb-2 w-fit px-0" onClick={() => setApplicationType("choose")}>
+                  <ArrowLeft className="mr-2 h-4 w-4" /> Choose another application
+                </Button>
+                <div className="mb-2 flex justify-center">
+                  <BrandLogo className="h-14 w-auto" />
+                </div>
+                <CardTitle className="text-2xl sm:text-3xl">Learnpedia — Organisation Partnership Interest Form</CardTitle>
+                <CardDescription className="text-sm leading-6">
+                  Tell us about your organisation and the collaboration you would like to explore. Completing this form records interest and does not create a binding partnership agreement or financial commitment.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {organizationSubmitted ? (
+                  <div className="py-10 text-center">
+                    <CheckCircle2 className="mx-auto h-12 w-12 text-primary" />
+                    <h1 className="mt-4 text-2xl font-bold">Thank you for your interest</h1>
+                    <p className="mx-auto mt-2 max-w-lg text-muted-foreground">
+                      Your organisation’s details have been sent to the Learnpedia team. A representative can follow up using your contact information.
+                    </p>
+                    <Button asChild className="mt-6"><Link href="/">Return to Learnpedia</Link></Button>
+                  </div>
+                ) : (
+                  <form className="space-y-8" onSubmit={(event) => { event.preventDefault(); organizationSubmit.mutate(); }}>
+                    <Section title="1. Organisation Information">
+                      <div className="grid gap-5 sm:grid-cols-2">
+                        <TextField id="organizationName" label="Organisation name" value={organizationForm.organizationName} onChange={(value) => setOrganizationField("organizationName", value)} required autoComplete="organization" />
+                        <SelectField id="organizationType" label="Organisation type" value={organizationForm.organizationType} options={organizationPartnershipTypes} placeholder="Choose an organisation type" onChange={(value) => setOrganizationField("organizationType", value as OrganizationPartnershipInterestForm["organizationType"])} />
+                      </div>
+                      <TextField id="organizationLocation" label="Location (city, state, and country)" value={organizationForm.location} onChange={(value) => setOrganizationField("location", value)} required autoComplete="address-level2" />
+                      <TextField id="organizationWebsite" label="Website or social media page (optional)" value={organizationForm.websiteOrSocialPage || ""} onChange={(value) => setOrganizationField("websiteOrSocialPage", value || null)} />
+                    </Section>
+                    <Section title="2. Contact Person">
+                      <div className="grid gap-5 sm:grid-cols-2">
+                        <TextField id="organizationContactName" label="Name" value={organizationForm.contactName} onChange={(value) => setOrganizationField("contactName", value)} required autoComplete="name" />
+                        <TextField id="organizationContactRole" label="Role / position" value={organizationForm.contactRole} onChange={(value) => setOrganizationField("contactRole", value)} required />
+                      </div>
+                      <div className="grid gap-5 sm:grid-cols-2">
+                        <TextField id="organizationEmail" label="Email address" value={organizationForm.emailAddress} onChange={(value) => setOrganizationField("emailAddress", value)} required type="email" autoComplete="email" />
+                        <TextField id="organizationPhone" label="Phone number" value={organizationForm.phoneNumber} onChange={(value) => setOrganizationField("phoneNumber", value)} required type="tel" autoComplete="tel" />
+                      </div>
+                    </Section>
+                    <Section title="3. Collaboration Interests">
+                      <fieldset className="space-y-3">
+                        <legend className="text-sm font-medium">Which Learnpedia opportunities interest your organisation? <span aria-hidden="true">*</span></legend>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          {organizationPartnershipInterestTypes.map((interest) => (
+                            <label key={interest} className="flex items-center gap-3 text-sm">
+                              <input
+                                type="checkbox"
+                                checked={organizationForm.areasOfInterest.includes(interest)}
+                                onChange={(event) => toggleOrganizationInterest(interest, event.target.checked)}
+                                className="h-4 w-4 rounded border-input accent-primary"
+                              />
+                              {interest}
+                            </label>
+                          ))}
+                        </div>
+                      </fieldset>
+                      {organizationForm.areasOfInterest.includes("Other") && (
+                        <TextField id="organizationOtherInterest" label="Please specify other area (optional)" value={organizationForm.otherInterest || ""} onChange={(value) => setOrganizationField("otherInterest", value || null)} />
+                      )}
+                      <div className="space-y-2">
+                        <Label htmlFor="partnershipProposal">Describe the collaboration or support your organisation would like to explore <span aria-hidden="true">*</span></Label>
+                        <Textarea id="partnershipProposal" value={organizationForm.partnershipProposal} onChange={(event) => setOrganizationField("partnershipProposal", event.target.value)} required rows={4} />
+                      </div>
+                      <SelectField id="organizationPartnershipArrangement" label="Preferred partnership arrangement" value={organizationForm.partnershipArrangement} options={["Learning Access Partner", "Digital Learning Partner", "Strategic Education Partner", "Need further info"]} placeholder="Please select an arrangement" onChange={(value) => setOrganizationField("partnershipArrangement", value as OrganizationPartnershipInterestForm["partnershipArrangement"])} />
+                      <div className="space-y-2">
+                        <Label htmlFor="organizationAdditionalComments">Additional comments or recommendations (optional)</Label>
+                        <Textarea id="organizationAdditionalComments" value={organizationForm.additionalComments || ""} onChange={(event) => setOrganizationField("additionalComments", event.target.value || null)} rows={3} />
+                      </div>
+                    </Section>
+                    <label className="flex items-start gap-3 rounded-md border p-4 text-sm leading-6">
+                      <input
+                        type="checkbox"
+                        required
+                        checked={organizationForm.acknowledged}
+                        onChange={(event) => setOrganizationField("acknowledged", event.target.checked)}
+                        className="mt-1 h-4 w-4 shrink-0 rounded border-input accent-primary"
+                      />
+                      <span>I confirm that the information provided is accurate and understand this form records interest without creating a binding financial commitment.</span>
+                    </label>
+                    <Button type="submit" className="w-full sm:w-auto" disabled={organizationSubmit.isPending || !organizationForm.areasOfInterest.length}>
+                      {organizationSubmit.isPending ? "Submitting…" : "Submit partnership interest"}
+                    </Button>
+                  </form>
+                )}
+              </CardContent>
+            </>
+          ) : (
+            <>
           <CardHeader>
+            <Button type="button" variant="ghost" className="mb-2 w-fit px-0" onClick={() => setApplicationType("choose")}>
+              <ArrowLeft className="mr-2 h-4 w-4" /> Choose another application
+            </Button>
             <div className="mb-2 flex justify-center">
               <BrandLogo className="h-14 w-auto" />
             </div>
@@ -161,7 +351,7 @@ export default function PartnershipInterestPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {submitted ? (
+            {schoolSubmitted ? (
               <div className="py-10 text-center">
                 <CheckCircle2 className="mx-auto h-12 w-12 text-primary" />
                 <h1 className="mt-4 text-2xl font-bold">Thank you for your interest</h1>
@@ -267,6 +457,8 @@ export default function PartnershipInterestPage() {
               </form>
             )}
           </CardContent>
+            </>
+          )}
         </Card>
       </div>
     </main>

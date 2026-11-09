@@ -12,7 +12,7 @@ This document describes a future feature for onboarding partner schools and meas
 
 ## Current state
 
-- The public school partnership interest form collects prospective partner information. A submission expresses interest; it does not establish an approved partner or assign a referral identity.
+- The public partner application page lets schools and other organizations submit separate interest forms. A submission expresses interest; it does not establish an approved partner or assign a referral identity.
 - The form and administrator inbox are described in [the partnership interest page](../../client/src/pages/partnership-interest.tsx) and [the partnership interest migration](../../supabase/migrations/20261107000000_school_partnership_interests.sql).
 - Student sign-up is implemented in [the registration page](../../client/src/pages/register.tsx). It currently accepts a referral-code field, but that field is not yet a complete school-attribution and reporting system.
 - Course participation is recorded separately from course access in `course_enrollments`; see [the enrollment migration](../../supabase/migrations/20261103000000_course_enrollments.sql) and [Supabase setup notes](../../supabase/README.md).

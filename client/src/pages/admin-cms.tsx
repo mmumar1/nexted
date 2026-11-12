@@ -1211,7 +1211,7 @@ function CourseImportPanel({
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4">
           <div>
             <p className="font-medium">Start with the Word template</p>
-            <p className="text-sm text-muted-foreground">Download it, replace the bracketed examples, then upload the saved .docx file.</p>
+            <p className="text-sm text-muted-foreground">Replace every bracketed example, then upload the saved .docx file. Word headings and Markdown # headings are both supported.</p>
           </div>
           <Button asChild type="button" variant="outline">
             <a href="/templates/learnpedia-course-import-template.docx" download>
@@ -1244,9 +1244,10 @@ function CourseImportPanel({
 
         <div className="rounded-lg bg-muted/50 p-4 text-sm">
           <p className="font-medium">Word template structure</p>
-          <p className="mt-2">Use Heading 1 for the course title, then a paragraph starting with <strong>Description:</strong>.</p>
-          <p className="mt-1">Use Heading 2 for <strong>Module 1: Title</strong> and Heading 3 for <strong>Lesson 1: Title</strong>.</p>
+          <p className="mt-2">Start with the course title as Heading 1 or <strong># Course title</strong>, then a paragraph starting with <strong>Description:</strong>. Introductory text before the title is ignored.</p>
+          <p className="mt-1">Use Heading 2 or <strong>## Module 1: Title</strong> and Heading 3 or <strong>### Lesson 1: Title</strong>. One module is enough; each module needs at least one lesson.</p>
           <p className="mt-1">Under each lesson, add explanation paragraphs and formatted lists. Place <strong>Image: https://...</strong> lines wherever an image should appear in that explanation. Add <strong>Video: https://youtube.com/...</strong> on its own line for each video.</p>
+          <p className="mt-1">Blank lines are okay. Replace all bracketed placeholders; Markdown bold such as <strong>**important**</strong> is supported.</p>
           <p className="mt-1 text-muted-foreground">Embedded images, audio, quizzes, and non-YouTube videos are not supported. Add quizzes separately with the existing quiz importer.</p>
         </div>
 

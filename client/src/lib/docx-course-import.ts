@@ -21,7 +21,17 @@ function isHttpUrl(value: string) {
 }
 
 function escapeMarkdown(value: string) {
-  return value.replace(/([\\`*_{}[\]<>])/g, "\\$1");
+  const markdownTokens: string[] = [];
+  const withMarkdownTokens = value.replace(
+    /\*\*[^*\n]+\*\*|__[^_\n]+__|(?<!\*)\*[^*\n]+\*(?!\*)|(?<!_)_[^_\n]+_(?!_)/g,
+    (token) => {
+      markdownTokens.push(token);
+      return `\u0000${markdownTokens.length - 1}\u0000`;
+    },
+  );
+  return withMarkdownTokens
+    .replace(/([\\`*_{}[\]<>])/g, "\\$1")
+    .replace(/\u0000(\d+)\u0000/g, (_, index: string) => markdownTokens[Number(index)]);
 }
 
 function markdownInline(node: Node): string {
@@ -80,6 +90,17 @@ function elementText(element: Element) {
   return (element.textContent ?? "").replace(/\s+/g, " ").trim();
 }
 
+function headingInfo(element: Element): { level: number; text: string } | null {
+  const tag = element.tagName.toLowerCase();
+  const nativeLevel = /^h[1-3]$/.test(tag) ? Number(tag[1]) : null;
+  const text = elementText(element);
+  const markdownHeading = text.match(/^\\?(#{1,3})\s+(.+)$/);
+  if (markdownHeading) {
+    return { level: markdownHeading[1].length, text: markdownHeading[2].trim() };
+  }
+  return nativeLevel ? { level: nativeLevel, text } : null;
+}
+
 function parseLabeledUrl(text: string, label: string) {
   const match = text.match(new RegExp(`^${label}\\s*:\\s*(https?:\\/\\/\\S+)\\s*$`, "i"));
   if (!match) return null;
@@ -89,6 +110,15 @@ function parseLabeledUrl(text: string, label: string) {
 function validationMessages(error: ReturnType<typeof courseImportPayloadSchema.safeParse>) {
   if (error.success) return [];
   return error.error.issues.map((issue) => {
+    if (issue.path[0] === "title") {
+      return "Course title must contain between 1 and 200 characters.";
+    }
+    if (issue.path[0] === "description") {
+      return "Course description must contain between 1 and 2,000 characters.";
+    }
+    if (issue.path[0] === "modules" && issue.code === "too_small") {
+      return "Add at least one course module with a lesson.";
+    }
     const path = issue.path.length ? `${issue.path.join(".")}: ` : "";
     return `${path}${issue.message}`;
   });
@@ -120,18 +150,38 @@ export async function parseCourseDocx(file: File): Promise<CourseImportParseResu
     errors.push("Embedded Word images are not supported yet. Add an Image: https://... URL at the required position instead.");
   }
 
-  const titleHeading = body.querySelector("h1");
-  const title = titleHeading ? elementText(titleHeading) : "";
-  if (!title) errors.push("Add the course title as a Heading 1.");
-  if (body.querySelectorAll("h1").length > 1) errors.push("Use only one Heading 1 for the course title.");
+  const elements = Array.from(body.children);
+  const titleIndex = elements.findIndex((element) => headingInfo(element)?.level === 1);
+  const titleHeading = titleIndex >= 0 ? elements[titleIndex] : null;
+  const title = titleHeading ? headingInfo(titleHeading)?.text ?? "" : "";
+  if (!title) {
+    errors.push("Course title not found. Add it as a Word Heading 1 or a markdown heading such as # Basic Biology.");
+  }
+  const laterTitleIndex = titleIndex < 0
+    ? -1
+    : elements.findIndex((element, index) => index > titleIndex && headingInfo(element)?.level === 1);
+  if (laterTitleIndex >= 0) {
+    errors.push(`Paragraph ${laterTitleIndex + 1}: Found another course title. Use only one Heading 1 or # heading.`);
+  }
 
-  const descriptionParagraph = Array.from(body.children).find((element) =>
-    element.tagName.toLowerCase() === "p" && /^description\s*:/i.test(elementText(element)),
-  );
+  const firstModuleIndex = titleIndex < 0
+    ? -1
+    : elements.findIndex((element, index) => index > titleIndex && headingInfo(element)?.level === 2);
+  const descriptionIndex = titleIndex < 0
+    ? -1
+    : elements.findIndex((element, index) =>
+      index > titleIndex
+      && (firstModuleIndex < 0 || index < firstModuleIndex)
+      && element.tagName.toLowerCase() === "p"
+      && /^description\s*:/i.test(elementText(element)),
+    );
+  const descriptionParagraph = descriptionIndex >= 0 ? elements[descriptionIndex] : null;
   const description = descriptionParagraph
     ? elementText(descriptionParagraph).replace(/^description\s*:\s*/i, "").trim()
     : "";
-  if (!description) errors.push("Add a paragraph directly under the course title: Description: Your course description.");
+  if (!description) {
+    errors.push("After the course title, add a paragraph starting with Description: and your course description.");
+  }
 
   const modules: CourseImportPayload["modules"] = [];
   let currentModuleIndex: number | null = null;
@@ -140,21 +190,23 @@ export async function parseCourseDocx(file: File): Promise<CourseImportParseResu
   let moduleOrder = 0;
   let descriptionFound = false;
 
-  for (const element of Array.from(body.children)) {
-    if (element === titleHeading) continue;
+  for (let paragraphIndex = 0; paragraphIndex < elements.length; paragraphIndex++) {
+    const element = elements[paragraphIndex];
+    if (paragraphIndex <= titleIndex) continue;
     if (element === descriptionParagraph && !descriptionFound) {
       descriptionFound = true;
       continue;
     }
 
     const tag = element.tagName.toLowerCase();
-    const text = elementText(element);
-    if (/^h[1-3]$/.test(tag)) {
-      if (tag === "h1") continue;
-      if (tag === "h2") {
+    const heading = headingInfo(element);
+    const text = heading?.text ?? elementText(element);
+    if (heading) {
+      if (heading.level === 1) continue;
+      if (heading.level === 2) {
         const match = text.match(/^module\s+(\d+)\s*:\s*(.+)$/i);
         if (!match) {
-          errors.push(`Invalid module heading "${text}". Use "Module 1: Module title" as a Heading 2.`);
+          errors.push(`Paragraph ${paragraphIndex + 1}: Invalid module heading "${text}". Use "Module 1: Module title" as Heading 2 or ## Module 1: Module title.`);
           currentModuleIndex = null;
           currentLessonIndex = null;
           continue;
@@ -178,12 +230,12 @@ export async function parseCourseDocx(file: File): Promise<CourseImportParseResu
 
       const match = text.match(/^lesson\s+(\d+)\s*:\s*(.+)$/i);
       if (!match) {
-        errors.push(`Invalid lesson heading "${text}". Use "Lesson 1: Lesson title" as a Heading 3.`);
+        errors.push(`Paragraph ${paragraphIndex + 1}: Invalid lesson heading "${text}". Use "Lesson 1: Lesson title" as Heading 3 or ### Lesson 1: Lesson title.`);
         currentLessonIndex = null;
         continue;
       }
       if (currentModuleIndex === null) {
-        errors.push(`Lesson "${match[2].trim()}" must appear under a Module heading.`);
+        errors.push(`Paragraph ${paragraphIndex + 1}: Lesson "${match[2].trim()}" must appear under a Module heading.`);
         currentLessonIndex = null;
         continue;
       }
@@ -211,7 +263,7 @@ export async function parseCourseDocx(file: File): Promise<CourseImportParseResu
     if (!text && tag !== "ul" && tag !== "ol") continue;
     if (currentLessonIndex === null) {
       if (currentModuleIndex !== null) {
-        errors.push(`Content "${text.slice(0, 60)}" is outside a lesson. Add it beneath a Lesson heading.`);
+        errors.push(`Paragraph ${paragraphIndex + 1}: Content "${text.slice(0, 60)}" is outside a lesson. Add it beneath a Lesson heading.`);
       }
       continue;
     }

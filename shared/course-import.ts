@@ -12,7 +12,7 @@ export const courseImportModuleSchema = z.object({
 export const courseImportPayloadSchema = z.object({
   title: z.string().trim().min(1).max(200),
   description: z.string().trim().min(1).max(2_000),
-  modules: z.array(courseImportModuleSchema).min(2).max(200),
+  modules: z.array(courseImportModuleSchema).min(1).max(200),
 }).superRefine(({ modules }, context) => {
   const contentLength = modules.reduce((total, module) => total + module.content.length, 0);
   if (contentLength > 300_000) {

@@ -6,7 +6,7 @@ import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ChevronLeft, Menu, MessageCircle } from "lucide-react";
+import { ChevronLeft, Menu, MessageCircle, Eye, ArrowLeft } from "lucide-react";
 import { Link } from "wouter";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useAuth } from "@/lib/auth-context";
@@ -29,6 +29,8 @@ export default function CoursePage() {
   const [showSubscriptionPrompt, setShowSubscriptionPrompt] = useState(false);
   const courseId = moduleParams?.courseId || legacyParams?.id || "1";
   const requestedModuleId = moduleParams?.moduleId;
+  const isStudentPreview = new URLSearchParams(window.location.search).get("preview") === "student";
+  const previewSuffix = isStudentPreview ? "?preview=student" : "";
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -37,28 +39,28 @@ export default function CoursePage() {
   }, [isAuthenticated, setLocation]);
 
   const { data: course } = useQuery<Course>({
-    queryKey: ["/api/courses", courseId],
+    queryKey: [`/api/courses/${courseId}${previewSuffix}`],
     enabled: !!courseId,
   });
 
   const { data: modules, isLoading: modulesLoading } = useQuery<(Module & { hasQuiz: boolean })[]>({
-    queryKey: ["/api/modules/course", courseId],
+    queryKey: [`/api/modules/course/${courseId}${previewSuffix}`],
     enabled: !!courseId,
   });
 
   const { data: completions } = useQuery<ModuleCompletion[]>({
     queryKey: ["/api/module-completions", user?.id, courseId],
-    enabled: !!user?.id && !!courseId,
+    enabled: !!user?.id && !!courseId && !isStudentPreview,
   });
 
   const { data: quizProgress } = useQuery<{ passedModuleIds: string[] }>({
     queryKey: ["/api/quiz-progress", user?.id, courseId],
-    enabled: !!user?.id && !!courseId,
+    enabled: !!user?.id && !!courseId && !isStudentPreview,
   });
 
   const { data: dashboardCourses } = useQuery<Array<{ id: string; isUnlocked: boolean; isEnrolled: boolean; enrollmentMode: "self" | "restricted" }>>({
     queryKey: ["/api/dashboard", user?.id],
-    enabled: !!user?.id,
+    enabled: !!user?.id && !isStudentPreview,
   });
   const enrollInCourse = useMutation({
     mutationFn: () => apiRequest("POST", `/api/courses/${courseId}/enroll`),
@@ -84,20 +86,20 @@ export default function CoursePage() {
 
   if (!user) return null;
 
-  const hasActiveSubscription = !!user.hasActiveSubscription;
+  const hasActiveSubscription = isStudentPreview || !!user.hasActiveSubscription;
   const hasCourseAccess = true;
   const courseEnrollment = dashboardCourses?.find((item) => item.id === courseId);
 
   const completedModuleIds = new Set(
-    completions?.map((completion) => completion.moduleId) || []
+    isStudentPreview ? [] : completions?.map((completion) => completion.moduleId) || []
   );
-  const passedQuizModuleIds = new Set(quizProgress?.passedModuleIds || []);
+  const passedQuizModuleIds = new Set(isStudentPreview ? [] : quizProgress?.passedModuleIds || []);
 
   const orderedModules = [...(modules ?? [])].sort((a, b) => compareModuleOrder(a, b, modules ?? []));
   const baseModulesWithCompletion: CourseModuleItem[] =
     orderedModules.map((m) => ({
       ...m,
-      isCompleted: completedModuleIds.has(m.id) || (m.hasQuiz && passedQuizModuleIds.has(m.id)),
+      isCompleted: !isStudentPreview && (completedModuleIds.has(m.id) || (m.hasQuiz && passedQuizModuleIds.has(m.id))),
       isLocked: false,
       requiresSubscription: false,
       hasQuiz: m.hasQuiz,
@@ -116,7 +118,7 @@ export default function CoursePage() {
       && !isWithinFreeTier
       && !hasUnpassedPreviousQuiz
       && (!module.prerequisiteModuleId || !!prerequisiteModule?.isQuizPassed);
-    const isLocked = !isModuleUnlocked({
+    const isLocked = !isStudentPreview && !isModuleUnlocked({
       hasUnpassedPreviousQuiz,
       hasPrerequisiteQuiz: !!prerequisiteModule?.hasQuiz,
       prerequisiteQuizPassed: !!prerequisiteModule?.isQuizPassed,
@@ -151,13 +153,13 @@ export default function CoursePage() {
     : 0;
 
   const handleTakeQuiz = (moduleId: string) => {
-    setLocation(`/quiz/${moduleId}`);
+    setLocation(`/quiz/${moduleId}${previewSuffix}`);
   };
 
   const handleSelectModule = (moduleId: string) => {
     setModuleSheetOpen(false);
     setShowSubscriptionPrompt(false);
-    setLocation(`/course/${courseId}/module/${moduleId}`);
+    setLocation(`/course/${courseId}/module/${moduleId}${previewSuffix}`);
   };
 
   return (
@@ -179,12 +181,26 @@ export default function CoursePage() {
         </div>
       ) : (
         <>
+      {isStudentPreview && (
+        <div className="border-b border-primary/25 bg-primary/5">
+          <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
+            <p className="flex items-center gap-2 text-sm font-medium text-foreground">
+              <Eye className="h-4 w-4 text-primary" />
+              Student preview — all modules are unlocked; progress and quiz attempts are not saved.
+            </p>
+            <Button variant="outline" size="sm" onClick={() => setLocation("/admin")}>
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back to course management
+            </Button>
+          </div>
+        </div>
+      )}
       {/* Course Header */}
       <div className="border-b bg-card">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <Link href="/dashboard" className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-4 hover-elevate px-2 py-1 rounded-md" data-testid="link-back-dashboard">
+          <Link href={isStudentPreview ? "/admin" : "/dashboard"} className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-4 hover-elevate px-2 py-1 rounded-md" data-testid="link-back-dashboard">
             <ChevronLeft className="w-4 h-4" />
-            Back to Dashboard
+            {isStudentPreview ? "Back to course management" : "Back to Dashboard"}
           </Link>
 
           {course ? (
@@ -218,7 +234,9 @@ export default function CoursePage() {
             </>
           )}
 
-          <div className="space-y-2">
+          {isStudentPreview ? (
+            <p className="text-sm text-muted-foreground">Previewing the learner experience. Learner progress is unchanged.</p>
+          ) : <div className="space-y-2">
             <div className="flex items-center justify-between text-sm">
               <span className="text-muted-foreground">Overall Progress</span>
               <span className="font-medium text-foreground">
@@ -226,7 +244,7 @@ export default function CoursePage() {
               </span>
             </div>
             <Progress value={progress} className="h-2" />
-          </div>
+          </div>}
         </div>
       </div>
 

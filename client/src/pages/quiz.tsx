@@ -205,6 +205,8 @@ export default function Quiz() {
   const { user, isAuthenticated } = useAuth();
   const { toast } = useToast();
   const moduleId = params?.moduleId || "1";
+  const isStudentPreview = new URLSearchParams(window.location.search).get("preview") === "student";
+  const previewSuffix = isStudentPreview ? "?preview=student" : "";
 
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [answers, setAnswers] = useState<Record<string, number>>({});
@@ -219,7 +221,7 @@ export default function Quiz() {
   }, [isAuthenticated, setLocation]);
 
   const { data: quiz, isLoading, error: quizError } = useQuery<QuizData>({
-    queryKey: ["/api/quizzes/module", moduleId],
+    queryKey: [`/api/quizzes/module/${moduleId}${previewSuffix}`],
     enabled: !!moduleId,
   });
   const percentage = quiz?.questions.length
@@ -227,12 +229,12 @@ export default function Quiz() {
     : 0;
 
   const { data: module } = useQuery<Module>({
-    queryKey: ["/api/modules", moduleId],
+    queryKey: [`/api/modules/${moduleId}${previewSuffix}`],
     enabled: !!moduleId,
   });
 
   const { data: courseModules } = useQuery<Module[]>({
-    queryKey: ["/api/modules/course", module?.courseId || "1"],
+    queryKey: [`/api/modules/course/${module?.courseId || "1"}${previewSuffix}`],
     enabled: !!module?.courseId,
   });
 
@@ -279,12 +281,13 @@ export default function Quiz() {
     setScore(correctCount);
     setShowResults(true);
     
-    // Save quiz attempt
-    submitQuizMutation.mutate({
-      quizId: quiz.id,
-      score: correctCount,
-      totalQuestions: quiz.questions.length,
-    });
+    if (!isStudentPreview) {
+      submitQuizMutation.mutate({
+        quizId: quiz.id,
+        score: correctCount,
+        totalQuestions: quiz.questions.length,
+      });
+    }
   };
 
   const handleRetry = () => {
@@ -355,13 +358,13 @@ export default function Quiz() {
   };
 
   const handleBackToCourse = () => {
-    setLocation(`/course/${module?.courseId || "1"}/module/${moduleId}`);
+    setLocation(`/course/${module?.courseId || "1"}/module/${moduleId}${previewSuffix}`);
   };
 
   const handleNextModule = () => {
     const courseId = module?.courseId || "1";
     if (!courseModules || !module) {
-      setLocation(`/course/${courseId}`);
+      setLocation(`/course/${courseId}${previewSuffix}`);
       return;
     }
 
@@ -370,11 +373,11 @@ export default function Quiz() {
     const nextModule = currentIndex >= 0 ? orderedModules[currentIndex + 1] : undefined;
 
     if (nextModule) {
-      setLocation(`/course/${courseId}/module/${nextModule.id}`);
+      setLocation(`/course/${courseId}/module/${nextModule.id}${previewSuffix}`);
       return;
     }
 
-    setLocation(`/course/${courseId}`);
+    setLocation(`/course/${courseId}${previewSuffix}`);
   };
 
   if (isLoading) {
@@ -434,8 +437,17 @@ export default function Quiz() {
       <Navbar />
 
       <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {isStudentPreview && (
+          <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary/25 bg-primary/5 p-3 text-sm">
+            <span className="font-medium">Student preview — this quiz attempt will not be saved.</span>
+            <Button type="button" variant="outline" size="sm" onClick={() => setLocation("/admin")}>
+              <ChevronLeft className="mr-2 h-4 w-4" />
+              Back to course management
+            </Button>
+          </div>
+        )}
         {/* Header */}
-        <Link href={`/course/${(module as any)?.courseId || "1"}`} className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-6 hover-elevate px-2 py-1 rounded-md" data-testid="link-back-course">
+        <Link href={`/course/${(module as any)?.courseId || "1"}${previewSuffix}`} className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-6 hover-elevate px-2 py-1 rounded-md" data-testid="link-back-course">
           <ChevronLeft className="w-4 h-4" />
           Back to Course
         </Link>
@@ -554,10 +566,12 @@ export default function Quiz() {
         <DialogContent className="flex max-h-[90dvh] flex-col gap-4 overflow-hidden sm:max-w-lg" data-testid="dialog-quiz-results">
           <DialogHeader className="shrink-0">
             <DialogTitle className="text-center text-2xl">
-              {percentage >= quiz.passScore ? "Your next level starts here" : "Keep moving forward"}
+              {isStudentPreview ? "Quiz preview complete" : percentage >= quiz.passScore ? "Your next level starts here" : "Keep moving forward"}
             </DialogTitle>
             <DialogDescription className="text-center">
-              Preview your shareable quiz achievement, then review your answers below.
+              {isStudentPreview
+                ? "This practice score was not saved to learner progress."
+                : "Preview your shareable quiz achievement, then review your answers below."}
             </DialogDescription>
           </DialogHeader>
 
@@ -565,7 +579,7 @@ export default function Quiz() {
             className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain pr-1"
             data-testid="quiz-results-scroll-area"
           >
-            <section
+            {!isStudentPreview && <section
               aria-label="Achievement card preview"
               className="relative mx-auto aspect-[4/5] w-full max-w-[340px] overflow-hidden rounded-[1.5rem] border border-white/20 bg-gradient-to-br from-teal-950 via-teal-700 to-slate-900 p-5 text-center text-white shadow-xl"
             >
@@ -603,9 +617,9 @@ export default function Quiz() {
                 <div className="mt-4 h-1 w-16 rounded-full bg-amber-300" />
                 <p className="mt-2 text-sm font-semibold">learnpedia.app</p>
               </div>
-            </section>
+            </section>}
 
-            <div className="grid grid-cols-2 gap-2">
+            {!isStudentPreview && <div className="grid grid-cols-2 gap-2">
               <Button onClick={() => void exportAchievement(false)} disabled={isSharing} variant="secondary">
                 <Download className="mr-2 h-4 w-4" />
                 Download card
@@ -614,7 +628,7 @@ export default function Quiz() {
                 <Share2 className="mr-2 h-4 w-4" />
                 {isSharing ? "Preparing..." : "Share achievement"}
               </Button>
-            </div>
+            </div>}
 
             <Accordion type="single" collapsible className="border-t pt-1">
               <AccordionItem value="answer-review" className="border-b-0">

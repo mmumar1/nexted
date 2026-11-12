@@ -219,6 +219,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
     return requester;
   };
 
+  const getCourseForAuthenticatedViewer = async (req: Request, res: Response, courseId: string) => {
+    const requester = await requireAuthenticatedMessagingUser(req, res);
+    if (!requester) return undefined;
+
+    const course = await storage.getCourse(courseId);
+    if (!course) {
+      res.status(404).json({ error: "Course not found" });
+      return undefined;
+    }
+
+    const canViewDraft = isMessagingStaffRole(requester.role)
+      && (isSuperAdmin(requester.role) || course.instructorId === requester.id);
+    if (req.query.preview === "student" && !canViewDraft) {
+      res.status(404).json({ error: "Course not found" });
+      return undefined;
+    }
+    if (!course.isPublished && !canViewDraft) {
+      res.status(404).json({ error: "Course not found" });
+      return undefined;
+    }
+
+    return course;
+  };
+
   const finalizeCbtAttempt = async (attempt: CbtAttempt, forceExpired = false) => {
     if (attempt.status !== "in_progress") return attempt;
     const expired = forceExpired || attempt.expiresAt.getTime() <= Date.now();
@@ -321,10 +345,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/courses/:id", async (req, res) => {
     try {
-      const course = await storage.getCourse(req.params.id);
-      if (!course) {
-        return res.status(404).json({ error: "Course not found" });
-      }
+      const course = await getCourseForAuthenticatedViewer(req, res, req.params.id);
+      if (!course) return;
       res.json(course);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch course" });
@@ -2028,6 +2050,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Module routes
   app.get("/api/modules/course/:courseId", async (req, res) => {
     try {
+      const course = await getCourseForAuthenticatedViewer(req, res, req.params.courseId);
+      if (!course) return;
       const modules = await storage.getModulesByCourse(req.params.courseId);
       const modulesWithQuiz = await Promise.all(
         modules.map(async (module) => ({
@@ -2047,6 +2071,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!module) {
         return res.status(404).json({ error: "Module not found" });
       }
+      const course = await getCourseForAuthenticatedViewer(req, res, module.courseId);
+      if (!course) return;
       res.json(module);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch module" });
@@ -2111,6 +2137,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Quiz routes
   app.get("/api/quizzes/module/:moduleId", async (req, res) => {
     try {
+      const module = await storage.getModule(req.params.moduleId);
+      if (!module) return res.status(404).json({ error: "Module not found" });
+      const course = await getCourseForAuthenticatedViewer(req, res, module.courseId);
+      if (!course) return;
       const quiz = await storage.getQuizByModule(req.params.moduleId);
       if (!quiz) {
         return res.status(404).json({ error: "Quiz not found for this module" });
@@ -2136,6 +2166,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!quiz) {
         return res.status(404).json({ error: "Quiz not found" });
       }
+      const module = await storage.getModule(quiz.moduleId);
+      if (!module) return res.status(404).json({ error: "Module not found" });
+      const course = await getCourseForAuthenticatedViewer(req, res, module.courseId);
+      if (!course) return;
       
       const questions = (JSON.parse(quiz.questions) as QuizQuestion[]).map(normalizeQuizQuestionIndex);
       res.json({

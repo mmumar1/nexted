@@ -19,7 +19,7 @@ import { QuizMarkdownEditor } from "@/components/quiz/quiz-markdown";
 import { LessonSpeechControls } from "@/components/course/lesson-speech-controls";
 import type { AnnouncementRecord } from "@/lib/announcements";
 import type { CbtExamType, Course, EventRecord, Module, OrganizationPartnershipInterest, PartnershipInterest, QuizQuestion, User } from "@shared/schema";
-import { Archive, BarChart3, BookOpen, CalendarDays, ClipboardList, CreditCard, Download, FileQuestion, FileUp, Handshake, LayoutDashboard, Pencil, Plus, RotateCcw, Send, Settings2, Trash2, UserRound, Users, X } from "lucide-react";
+import { Archive, BarChart3, BookOpen, CalendarDays, ClipboardList, CreditCard, Download, Eye, FileQuestion, FileUp, Handshake, LayoutDashboard, Pencil, Plus, RotateCcw, Send, Settings2, Trash2, UserRound, Users, X } from "lucide-react";
 import { isInitialEmptyQuizQuestion, parseQuizCsv, type QuizCsvPreview } from "@/lib/quiz-csv";
 import { parseCourseDocx, type CourseImportParseResult } from "@/lib/docx-course-import";
 import type { CourseImportPayload } from "@shared/course-import";
@@ -930,6 +930,7 @@ export default function AdminCms() {
               courses={visibleCourseOptions}
               selectedCourseId={selectedCourseId}
               chooseCourse={chooseCourse}
+              onPreview={() => setLocation(`/course/${selectedCourseId}?preview=student`)}
               modules={modules.data?.filter((module) => module.courseId === selectedCourseId) || []}
               draft={moduleDraft}
               setDraft={setModuleDraft}
@@ -1191,6 +1192,19 @@ function CourseImportPanel({
         <CardDescription>Upload a structured .docx to create a course draft or append modules to a course you manage.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4">
+          <div>
+            <p className="font-medium">Start with the Word template</p>
+            <p className="text-sm text-muted-foreground">Download it, replace the bracketed examples, then upload the saved .docx file.</p>
+          </div>
+          <Button asChild type="button" variant="outline">
+            <a href="/templates/learnpedia-course-import-template.docx" download>
+              <Download className="mr-2 h-4 w-4" />
+              Download Word template
+            </a>
+          </Button>
+        </div>
+
         <div className="space-y-2">
           <Label htmlFor="bulk-course-target">Add to an existing course (optional)</Label>
           <select
@@ -1297,17 +1311,26 @@ function CourseImportPanel({
   );
 }
 
-function ModulePanel({ courses, selectedCourseId, chooseCourse, modules, draft, setDraft, editingModuleId, setEditingModuleId, onSave, pending }: any) {
+function ModulePanel({ courses, selectedCourseId, chooseCourse, onPreview, modules, draft, setDraft, editingModuleId, setEditingModuleId, onSave, pending }: any) {
   const courseModules = modules.filter((module: Module) => module.courseId === selectedCourseId);
   const topLevelModules = courseModules.filter((module: Module) => !module.parentModuleId);
   const childModules = (parentId: string) => courseModules.filter((module: Module) => module.parentModuleId === parentId);
+  const selectedCourse = courses.find((course: Course) => course.id === selectedCourseId);
 
   return (
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>{editingModuleId ? "Edit module" : "Create module"}</CardTitle>
-          <CardDescription>Create content with duration, media, ordering, and prerequisites.</CardDescription>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle>{editingModuleId ? "Edit module" : "Create module"}</CardTitle>
+              <CardDescription>Create content with duration, media, ordering, and prerequisites.</CardDescription>
+            </div>
+            <Button type="button" variant="outline" disabled={!selectedCourse} onClick={onPreview}>
+              <Eye className="mr-2 h-4 w-4" />
+              View as student
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           <CourseSelect courses={courses} value={selectedCourseId} onChange={chooseCourse} />

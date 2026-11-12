@@ -36,6 +36,7 @@ import {
 } from "../shared/schema.js";
 import type { PartnershipInterestInput } from "../shared/partnership-interest.js";
 import type { OrganizationPartnershipInterestInput } from "../shared/organization-partnership-interest.js";
+import type { CourseImportPayload } from "../shared/course-import.js";
 import { randomUUID } from "crypto";
 import { SupabaseStorage } from "./supabase-storage.js";
 
@@ -52,6 +53,8 @@ export interface IStorage {
   getAllCourses(): Promise<Course[]>;
   getCourseByAccessCode(accessCode: string): Promise<Course | undefined>;
   createCourse(course: InsertCourse): Promise<Course>;
+  createCourseDraftFromImport(payload: CourseImportPayload, instructorId: string): Promise<Course>;
+  appendCourseDraftFromImport(courseId: string, payload: CourseImportPayload): Promise<Course>;
   updateCourse(id: string, data: Partial<InsertCourse>): Promise<Course | undefined>;
   deleteCourse(id: string): Promise<boolean>;
   deleteModule(id: string): Promise<boolean>;
@@ -513,6 +516,85 @@ export class MemStorage implements IStorage {
       publishedAt: insertCourse.publishedAt ?? null,
     };
     this.courses.set(id, course);
+    return course;
+  }
+
+  async createCourseDraftFromImport(payload: CourseImportPayload, instructorId: string): Promise<Course> {
+    const course = await this.createCourse({
+      title: payload.title,
+      description: payload.description,
+      accessCode: "",
+      thumbnail: null,
+      enrollmentMode: "self",
+      instructorId,
+      isPublished: false,
+      publishedAt: null,
+    });
+    const moduleIds: string[] = [];
+    for (const importedModule of payload.modules) {
+      const parentModuleId = importedModule.parentIndex === null
+        ? null
+        : moduleIds[importedModule.parentIndex];
+      if (importedModule.parentIndex !== null && !parentModuleId) {
+        this.courses.delete(course.id);
+        for (const moduleId of moduleIds) this.modules.delete(moduleId);
+        throw new Error("Course import contains a lesson without a preceding module");
+      }
+
+      const module = await this.createModule({
+        courseId: course.id,
+        title: importedModule.title,
+        order: importedModule.order,
+        content: importedModule.content,
+        videoUrls: importedModule.videoUrls,
+        imageUrl: null,
+        parentModuleId,
+        prerequisiteModuleId: null,
+        duration: 30,
+      });
+      moduleIds.push(module.id);
+    }
+    return course;
+  }
+
+  async appendCourseDraftFromImport(courseId: string, payload: CourseImportPayload): Promise<Course> {
+    const course = await this.getCourse(courseId);
+    if (!course) throw new Error("Course not found");
+
+    const existingRootModules = (await this.getModulesByCourse(courseId))
+      .filter((module) => module.parentModuleId === null);
+    const rootOrderOffset = Math.max(0, ...existingRootModules.map((module) => module.order));
+    const moduleIds: string[] = [];
+
+    try {
+      for (const importedModule of payload.modules) {
+        const parentModuleId = importedModule.parentIndex === null
+          ? null
+          : moduleIds[importedModule.parentIndex];
+        if (importedModule.parentIndex !== null && !parentModuleId) {
+          throw new Error("Course import contains a lesson without a preceding module");
+        }
+
+        const module = await this.createModule({
+          courseId,
+          title: importedModule.title,
+          order: importedModule.parentIndex === null
+            ? rootOrderOffset + importedModule.order
+            : importedModule.order,
+          content: importedModule.content,
+          videoUrls: importedModule.videoUrls,
+          imageUrl: null,
+          parentModuleId,
+          prerequisiteModuleId: null,
+          duration: 30,
+        });
+        moduleIds.push(module.id);
+      }
+    } catch (error) {
+      for (const moduleId of moduleIds) this.modules.delete(moduleId);
+      throw error;
+    }
+
     return course;
   }
 

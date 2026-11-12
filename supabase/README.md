@@ -17,6 +17,8 @@ This folder contains the starting database schema and row-level security setup f
 - `migrations/20261103000000_course_enrollments.sql`: separate learner enrollment from content access and preserve historical course activity.
 - `migrations/20261107000000_school_partnership_interests.sql`: store school partnership interest submissions with access limited to the server service role.
 - `migrations/20261110000000_organization_partnership_interests.sql`: store non-school organization applications separately, with access limited to the server service role.
+- `migrations/20261112000000_bulk_course_import.sql`: create course drafts and nested modules/lessons atomically from a validated Word import.
+- `migrations/20261113000000_append_course_import.sql`: append validated Word-import modules atomically to an existing course.
 
 ## Recommended Supabase setup
 
@@ -26,15 +28,23 @@ This folder contains the starting database schema and row-level security setup f
 4. Run `migrations/20261103000000_course_enrollments.sql` to configure the enrollment/progress policies.
 5. Run `migrations/20261107000000_school_partnership_interests.sql` to enable the school partnership form and admin inbox.
 6. Run `migrations/20261110000000_organization_partnership_interests.sql` to enable applications from other organizations.
-7. Register one user in Learnpedia, promote that user's profile to `super_admin`, then run `seed.sql`.
-8. Add the following environment variables to your Vercel app/server:
+7. Run `migrations/20261112000000_bulk_course_import.sql` to enable atomic bulk course draft creation.
+8. Run `migrations/20261113000000_append_course_import.sql` to enable appending modules to existing courses.
+9. Register one user in Learnpedia, promote that user's profile to `super_admin`, then run `seed.sql`.
+10. Add the following environment variables to your Vercel app/server:
    - `SUPABASE_URL` and `SUPABASE_ANON_KEY` (or the legacy `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`)
    - `SUPABASE_SERVICE_ROLE_KEY`
    - `STRIPE_SECRET_KEY`
    - `PAYSTACK_SECRET_KEY`
-9. Restart the server after setting environment variables.
+11. Restart the server after setting environment variables.
 
 The public partner application page lets applicants choose either a school form or a separate other-organization form. Both save through server APIs into separate tables. Anonymous and regular authenticated clients have no direct table access; super admins can review both types in **Admin CMS → Partner applications**.
+
+## Bulk course import
+
+In **Admin CMS → Courses**, staff can upload a `.docx` document (up to 5 MB) for validation and preview before importing it. Use Heading 1 for the course title, a `Description: ...` paragraph, Heading 2 headings in the form `Module 1: Title`, and Heading 3 headings in the form `Lesson 1: Title`. Lesson paragraphs and lists become Markdown in their original order. Put `Image: https://...` and `Video: https://...` on separate lines under a lesson; image links stay at that exact position in the explanation.
+
+The importer supports external HTTP(S) image links and YouTube video links only. Embedded Word images, audio, quiz questions, flashcards, H5P, and non-YouTube video links are not supported. A new import creates an unpublished draft assigned to the signed-in staff member. To add more content later, choose an existing course the staff member can manage; new modules are appended without replacing existing content or changing the course title and description. This also works for published courses. Number modules from 1 within each document; Learnpedia assigns them the next module numbers in the selected course. Quizzes can still be added using the existing quiz workflow.
 
 ## Enrollment and access are separate
 

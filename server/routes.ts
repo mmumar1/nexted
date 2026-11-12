@@ -24,6 +24,7 @@ import {
   type Module,
   type QuizQuestion,
 } from "../shared/schema.js";
+import { courseImportPayloadSchema } from "../shared/course-import.js";
 import { partnershipInterestInputSchema } from "../shared/partnership-interest.js";
 import { organizationPartnershipInterestInputSchema } from "../shared/organization-partnership-interest.js";
 import { z } from "zod";
@@ -399,6 +400,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
       res.status(500).json({ error: "Failed to create course" });
+    }
+  });
+
+  app.post("/api/admin/courses/bulk-import", async (req, res) => {
+    const requester = await requireAuthenticatedStaff(req, res);
+    if (!requester) return;
+    try {
+      const payload = courseImportPayloadSchema.parse(req.body.course);
+      const course = await storage.createCourseDraftFromImport(payload, requester.id);
+      return res.status(201).json(course);
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
+      console.error("Failed to import DOCX course draft:", error);
+      return res.status(500).json({ error: "Failed to create the course draft. No course content was saved." });
+    }
+  });
+
+  app.post("/api/admin/courses/:id/bulk-import", async (req, res) => {
+    const requester = await requireAuthenticatedStaff(req, res);
+    if (!requester) return;
+    try {
+      const course = await storage.getCourse(req.params.id);
+      if (!course) return res.status(404).json({ error: "Course not found" });
+      if (!isSuperAdmin(requester.role) && course.instructorId !== requester.id) {
+        return res.status(403).json({ error: "You can only append modules to courses assigned to you" });
+      }
+
+      const payload = courseImportPayloadSchema.parse(req.body.course);
+      const updatedCourse = await storage.appendCourseDraftFromImport(course.id, payload);
+      return res.status(200).json(updatedCourse);
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
+      console.error("Failed to append DOCX modules to course draft:", error);
+      return res.status(500).json({ error: "Failed to append modules to the course draft. No module content was saved." });
     }
   });
 

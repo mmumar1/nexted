@@ -38,6 +38,7 @@ import type {
   User,
   UserCourse,
 } from "../shared/schema.js";
+import type { CourseImportPayload } from "../shared/course-import.js";
 import type { PartnershipInterestInput } from "../shared/partnership-interest.js";
 import type { OrganizationPartnershipInterestInput } from "../shared/organization-partnership-interest.js";
 
@@ -349,6 +350,32 @@ export class SupabaseStorage implements IStorage {
     const createdCourse = mapCourse(required(data, error)!);
     if (createdCourse.isPublished) await this.grantCourseToSubscribers(createdCourse.id);
     return createdCourse;
+  }
+
+  async createCourseDraftFromImport(payload: CourseImportPayload, instructorId: string): Promise<Course> {
+    const { data, error } = await this.client.rpc("create_course_draft_from_import", {
+      p_title: payload.title,
+      p_description: payload.description,
+      p_instructor_id: instructorId,
+      p_modules: payload.modules,
+    });
+    if (error) throw new Error(error.message);
+    if (typeof data !== "string") throw new Error("Course import did not return a course ID");
+    const course = await this.getCourse(data);
+    if (!course) throw new Error("Imported draft course was not found after creation");
+    return course;
+  }
+
+  async appendCourseDraftFromImport(courseId: string, payload: CourseImportPayload): Promise<Course> {
+    const { data, error } = await this.client.rpc("append_course_draft_from_import", {
+      p_course_id: courseId,
+      p_modules: payload.modules,
+    });
+    if (error) throw new Error(error.message);
+    if (data !== courseId) throw new Error("Course import did not confirm the selected course");
+    const course = await this.getCourse(courseId);
+    if (!course) throw new Error("Updated draft course was not found after import");
+    return course;
   }
 
   async updateCourse(id: string, update: Partial<InsertCourse>) {

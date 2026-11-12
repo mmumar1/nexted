@@ -21,6 +21,8 @@ import type { AnnouncementRecord } from "@/lib/announcements";
 import type { CbtExamType, Course, EventRecord, Module, OrganizationPartnershipInterest, PartnershipInterest, QuizQuestion, User } from "@shared/schema";
 import { Archive, BarChart3, BookOpen, CalendarDays, ClipboardList, CreditCard, Download, FileQuestion, FileUp, Handshake, LayoutDashboard, Pencil, Plus, RotateCcw, Send, Settings2, Trash2, UserRound, Users, X } from "lucide-react";
 import { isInitialEmptyQuizQuestion, parseQuizCsv, type QuizCsvPreview } from "@/lib/quiz-csv";
+import { parseCourseDocx, type CourseImportParseResult } from "@/lib/docx-course-import";
+import type { CourseImportPayload } from "@shared/course-import";
 import { formatDateTimeForZone, localDateTimeToUtc } from "@shared/event-utils";
 import { getModuleDisplayLabel } from "@shared/module-utils";
 
@@ -231,6 +233,10 @@ export default function AdminCms() {
   const [announcementDraft, setAnnouncementDraft] = useState({ title: "", message: "" });
   const [paymentReviewNotes, setPaymentReviewNotes] = useState<Record<string, string>>({});
   const [readPartnershipIds, setReadPartnershipIds] = useState<string[]>([]);
+  const [courseImportFile, setCourseImportFile] = useState<File | null>(null);
+  const [courseImportResult, setCourseImportResult] = useState<CourseImportParseResult | null>(null);
+  const [courseImportTargetId, setCourseImportTargetId] = useState("");
+  const [isParsingCourseImport, setIsParsingCourseImport] = useState(false);
   const courseEditorRef = useRef<HTMLDivElement>(null);
 
   const canManage = !!user && isStaffRole(user.role);
@@ -496,6 +502,57 @@ export default function AdminCms() {
     onError: (error: Error) => toast({ title: "Could not create course", description: error.message, variant: "destructive" }),
   });
 
+  const importCourse = useMutation({
+    mutationFn: ({ course, targetCourseId }: { course: CourseImportPayload; targetCourseId: string }) =>
+      apiRequest(
+        "POST",
+        targetCourseId ? `/api/admin/courses/${targetCourseId}/bulk-import` : "/api/admin/courses/bulk-import",
+        { course },
+      ),
+    onSuccess: (course: Course, variables) => {
+      invalidate(["/api/admin/courses", adminId]);
+      setSelectedCourseId(course.id);
+      setCourseImportTargetId(course.id);
+      setCourseDraft({
+        title: course.title,
+        description: course.description,
+        enrollmentMode: course.enrollmentMode,
+        instructorId: course.instructorId || user?.id || "",
+        thumbnail: course.thumbnail || "",
+        isPublished: !!course.isPublished,
+      });
+      setCourseImportFile(null);
+      setCourseImportResult(null);
+      setSection("modules");
+      toast({
+        title: variables.targetCourseId ? "Modules added to course draft" : "Course imported as a draft",
+        description: variables.targetCourseId
+          ? "The new modules were appended. Existing course content was not replaced."
+          : "Review the imported lessons, add quizzes if needed, then publish when ready.",
+      });
+    },
+    onError: (error: Error) => toast({ title: "Could not import course", description: error.message, variant: "destructive" }),
+  });
+
+  const inspectCourseImportFile = async (file: File | undefined) => {
+    setCourseImportFile(file ?? null);
+    setCourseImportResult(null);
+    if (!file) return;
+    setIsParsingCourseImport(true);
+    try {
+      setCourseImportResult(await parseCourseDocx(file));
+    } catch (error) {
+      console.error("Could not parse DOCX course template:", error);
+      setCourseImportResult({
+        course: null,
+        errors: ["The Word file could not be parsed. Check the template structure and try again."],
+        warnings: [],
+      });
+    } finally {
+      setIsParsingCourseImport(false);
+    }
+  };
+
   const saveModule = useMutation({
     mutationFn: () => apiRequest(editingModuleId ? "PATCH" : "POST", editingModuleId ? `/api/admin/modules/${editingModuleId}` : "/api/admin/modules", {
       userId: adminId,
@@ -704,6 +761,22 @@ export default function AdminCms() {
 
           {section === "courses" && (
             <div className="space-y-6">
+              <CourseImportPanel
+                file={courseImportFile}
+                result={courseImportResult}
+                parsing={isParsingCourseImport}
+                importing={importCourse.isPending}
+                availableCourses={(courses.data || []).filter((course) =>
+                  isSuperAdmin(user?.role) || course.instructorId === user?.id,
+                )}
+                targetCourseId={courseImportTargetId}
+                onTargetCourseChange={setCourseImportTargetId}
+                onFileChange={inspectCourseImportFile}
+                onImport={() => courseImportResult?.course && importCourse.mutate({
+                  course: courseImportResult.course,
+                  targetCourseId: courseImportTargetId,
+                })}
+              />
               <Card>
                 <CardHeader>
                   <CardTitle>Create a new course</CardTitle>
@@ -1084,6 +1157,143 @@ function Overview({ courses, users, onSection }: { analytics?: Analytics; course
         </button>
       ))}
     </div>
+  );
+}
+
+function CourseImportPanel({
+  file,
+  result,
+  parsing,
+  importing,
+  availableCourses,
+  targetCourseId,
+  onTargetCourseChange,
+  onFileChange,
+  onImport,
+}: {
+  file: File | null;
+  result: CourseImportParseResult | null;
+  parsing: boolean;
+  importing: boolean;
+  availableCourses: Course[];
+  targetCourseId: string;
+  onTargetCourseChange: (courseId: string) => void;
+  onFileChange: (file: File | undefined) => void;
+  onImport: () => void;
+}) {
+  const modules = result?.course?.modules ?? [];
+  const rootModules = modules.filter((module) => module.parentIndex === null);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Bulk upload course</CardTitle>
+        <CardDescription>Upload a structured .docx to create a course draft or append modules to a course you manage.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        <div className="space-y-2">
+          <Label htmlFor="bulk-course-target">Add to an existing course (optional)</Label>
+          <select
+            id="bulk-course-target"
+            className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+            value={targetCourseId}
+            onChange={(event) => onTargetCourseChange(event.currentTarget.value)}
+            disabled={importing}
+          >
+            <option value="">Create a new course</option>
+            {availableCourses.map((course) => (
+              <option key={course.id} value={course.id}>{course.title}</option>
+            ))}
+          </select>
+          {targetCourseId && (
+            <p className="text-sm text-muted-foreground">
+              This upload adds modules to the selected course. The document’s course title and description will not replace the existing course details.
+            </p>
+          )}
+        </div>
+
+        <div className="rounded-lg bg-muted/50 p-4 text-sm">
+          <p className="font-medium">Word template structure</p>
+          <p className="mt-2">Use Heading 1 for the course title, then a paragraph starting with <strong>Description:</strong>.</p>
+          <p className="mt-1">Use Heading 2 for <strong>Module 1: Title</strong> and Heading 3 for <strong>Lesson 1: Title</strong>.</p>
+          <p className="mt-1">Under each lesson, add explanation paragraphs and formatted lists. Place <strong>Image: https://...</strong> lines wherever an image should appear in that explanation. Add <strong>Video: https://youtube.com/...</strong> on its own line for each video.</p>
+          <p className="mt-1 text-muted-foreground">Embedded images, audio, quizzes, and non-YouTube videos are not supported. Add quizzes separately with the existing quiz importer.</p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="bulk-course-docx">Word document (.docx, max 5 MB)</Label>
+          <Input
+            id="bulk-course-docx"
+            type="file"
+            accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            onChange={(event) => onFileChange(event.currentTarget.files?.[0])}
+          />
+          {file && <p className="text-sm text-muted-foreground">Selected: {file.name}</p>}
+        </div>
+
+        {parsing && <p className="text-sm text-muted-foreground">Reading and validating the Word document…</p>}
+        {result?.errors.length ? (
+          <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm" role="alert">
+            <p className="font-medium text-destructive">Fix these issues before importing:</p>
+            <ul className="mt-2 list-disc space-y-1 pl-5">
+              {result.errors.map((error, index) => <li key={`${index}-${error}`}>{error}</li>)}
+            </ul>
+          </div>
+        ) : null}
+        {result?.warnings.length ? (
+          <div className="rounded-lg border p-4 text-sm">
+            <p className="font-medium">Word formatting notes</p>
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-muted-foreground">
+              {result.warnings.map((warning, index) => <li key={`${index}-${warning}`}>{warning}</li>)}
+            </ul>
+          </div>
+        ) : null}
+
+        {result?.course && (
+          <div className="space-y-4 rounded-lg border p-4">
+            <div>
+              <p className="font-semibold">{result.course.title}</p>
+              <p className="mt-1 text-sm text-muted-foreground">{result.course.description}</p>
+            </div>
+            <div className="space-y-3">
+              {rootModules.map((module, index) => {
+                const moduleIndex = modules.indexOf(module);
+                const lessons = modules.filter((lesson) => lesson.parentIndex === moduleIndex);
+                return (
+                  <div key={`${module.title}-${index}`} className="rounded-md bg-muted/40 p-3">
+                    <p className="font-medium">Module {module.order}: {module.title}</p>
+                    <div className="mt-2 space-y-3 pl-3">
+                      {lessons.map((lesson, lessonIndex) => (
+                        <div key={`${lesson.title}-${lessonIndex}`}>
+                          <p className="text-sm font-medium">Lesson {lesson.order}: {lesson.title}</p>
+                          <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-background p-2 text-xs text-muted-foreground">{lesson.content}</pre>
+                          {lesson.videoUrls.length > 0 && (
+                            <p className="mt-1 text-xs text-muted-foreground">Videos: {lesson.videoUrls.join(", ")}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {targetCourseId
+                ? `This batch adds ${rootModules.length} module${rootModules.length === 1 ? "" : "s"} to the selected course.`
+                : "The import creates a draft assigned to your account. Nothing is published automatically."}
+            </p>
+          </div>
+        )}
+
+        <Button
+          disabled={!result?.course || result.errors.length > 0 || parsing || importing || (!!targetCourseId && !availableCourses.some((course) => course.id === targetCourseId))}
+          onClick={onImport}
+        >
+          <FileUp className="mr-2 h-4 w-4" />
+          {importing ? (targetCourseId ? "Adding modules…" : "Creating draft…") : (targetCourseId ? "Append modules to draft" : "Import as new draft")}
+        </Button>
+      </CardContent>
+    </Card>
   );
 }
 

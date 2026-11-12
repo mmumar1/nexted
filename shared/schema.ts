@@ -117,7 +117,7 @@ export const httpImageUrlSchema = z.string().url().refine((value) => {
   return protocol === "http:" || protocol === "https:";
 }, "Images must use an HTTP or HTTPS URL");
 
-const youtubeVideoUrlSchema = z.string().trim().url().refine((value) => {
+export const youtubeVideoUrlSchema = z.string().trim().url().refine((value) => {
   const url = new URL(value);
   const youtubeHosts = [
     "youtube.com",

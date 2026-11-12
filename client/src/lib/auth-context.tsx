@@ -32,7 +32,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let mounted = true;
 
-    const loadProfile = async (userId: string, requestId: number) => {
+    const recordStaffLogin = async () => {
+      try {
+        const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError) throw sessionError;
+        const accessToken = sessionData.session?.access_token;
+        if (!accessToken) throw new Error("Signed-in session is unavailable");
+
+        const response = await fetch("/api/auth/record-staff-login", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (!response.ok) {
+          const message = await response.text();
+          throw new Error(message || `Request failed with status ${response.status}`);
+        }
+      } catch (error) {
+        console.error("Could not record staff login activity:", error);
+      }
+    };
+
+    const loadProfile = async (userId: string, requestId: number, recordLogin: boolean) => {
       const { data: profile, error } = await supabase
         .from("profiles")
         .select("*")
@@ -43,10 +63,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loadedUserId.current = userId;
         setUser(normalizeUser(mapSupabaseProfileToUser(profile as SupabaseProfile)));
         setIsLoading(false);
+        if (recordLogin && ["instructor", "admin", "super_admin", "superadmin"].includes(profile.role)) {
+          window.setTimeout(() => void recordStaffLogin(), 0);
+        }
       }
     };
 
-    const loadSessionProfile = (userId: string) => {
+    const loadSessionProfile = (userId: string, recordLogin = false) => {
       if (loadedUserId.current !== userId) {
         loadedUserId.current = null;
         setUser(null);
@@ -54,7 +77,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       const requestId = ++profileRequestId.current;
       window.setTimeout(() => {
-        void loadProfile(userId, requestId).catch((error) => {
+        void loadProfile(userId, requestId, recordLogin).catch((error) => {
           console.error("Failed to load Supabase profile:", error);
           if (mounted && profileRequestId.current === requestId) {
             if (!loadedUserId.current) setUser(null);
@@ -74,7 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       if (event === "TOKEN_REFRESHED" && loadedUserId.current === session.user.id) return;
-      loadSessionProfile(session.user.id);
+      loadSessionProfile(session.user.id, event === "SIGNED_IN");
     });
 
     const refreshSessionProfile = () => {

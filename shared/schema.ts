@@ -24,7 +24,7 @@ export const users = pgTable("users", {
 
 export const insertUserSchema = createInsertSchema(users).omit({ id: true });
 export type InsertUser = z.infer<typeof insertUserSchema>;
-export type User = typeof users.$inferSelect;
+export type User = typeof users.$inferSelect & { lastLoginAt: Date | null };
 
 export const registerSchema = z.object({
   fullName: z.string().trim().min(2, "Enter your full name"),
@@ -71,7 +71,7 @@ export const courses = pgTable("courses", {
 
 export const insertCourseSchema = createInsertSchema(courses).omit({ id: true });
 export type InsertCourse = z.infer<typeof insertCourseSchema>;
-export type Course = typeof courses.$inferSelect;
+export type Course = typeof courses.$inferSelect & { createdAt: Date; updatedAt: Date };
 
 // Course content access grants; participation is tracked separately in course_enrollments.
 export const userCourses = pgTable("user_courses", {

@@ -145,6 +145,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     return requester;
   };
 
+  app.post("/api/auth/record-staff-login", async (req, res) => {
+    const requester = await requireAuthenticatedStaff(req, res);
+    if (!requester) return;
+    if (!["instructor", "admin", "super_admin", "superadmin"].includes(requester.role)) {
+      return res.status(403).json({ error: "Staff account required" });
+    }
+
+    try {
+      await storage.recordStaffLogin(requester.id);
+      return res.status(204).end();
+    } catch (error) {
+      console.error("Failed to record staff login activity:", error);
+      return res.status(500).json({ error: "Could not record staff login activity" });
+    }
+  });
+
   const requireAuthenticatedPartnerAdmin = async (req: Request, res: Response) => {
     const authorization = req.header("Authorization");
     const accessToken = authorization?.startsWith("Bearer ")

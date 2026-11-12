@@ -69,6 +69,7 @@ function mapProfile(row: DatabaseRow): User {
     phoneNumber: row.phone_number ?? null,
     whatsappNumber: row.whatsapp_number ?? null,
     referralCode: row.referral_code ?? null,
+    lastLoginAt: row.last_login_at ? new Date(row.last_login_at) : null,
   };
 }
 
@@ -83,6 +84,8 @@ function mapCourse(row: DatabaseRow): Course {
     instructorId: row.instructor_id,
     isPublished: row.is_published,
     publishedAt: row.published_at ? new Date(row.published_at) : null,
+    createdAt: new Date(row.created_at),
+    updatedAt: new Date(row.updated_at),
   };
 }
 
@@ -319,6 +322,18 @@ export class SupabaseStorage implements IStorage {
   async getAllUsers() {
     const { data, error } = await this.client.from("profiles").select("*").order("created_at", { ascending: true });
     return (required(data, error) ?? []).map(mapProfile);
+  }
+
+  async recordStaffLogin(userId: string): Promise<void> {
+    const { data, error } = await this.client
+      .from("profiles")
+      .update({ last_login_at: new Date().toISOString() })
+      .eq("id", userId)
+      .in("role", ["instructor", "admin", "super_admin", "superadmin"])
+      .select("id")
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!data) throw new Error("Staff profile was not found while recording login activity");
   }
 
   async getCourse(id: string) {

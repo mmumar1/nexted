@@ -19,6 +19,7 @@ create table public.profiles (
   subscription_tier text not null default 'none',
   subscription_paid_at timestamptz,
   subscription_expires_at timestamptz,
+  last_login_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );

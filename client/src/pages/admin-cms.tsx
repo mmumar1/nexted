@@ -19,7 +19,7 @@ import { QuizMarkdownEditor } from "@/components/quiz/quiz-markdown";
 import { LessonSpeechControls } from "@/components/course/lesson-speech-controls";
 import type { AnnouncementRecord } from "@/lib/announcements";
 import type { CbtExamType, Course, EventRecord, Module, OrganizationPartnershipInterest, PartnershipInterest, QuizQuestion, User } from "@shared/schema";
-import { Archive, BarChart3, BookOpen, CalendarDays, ClipboardList, CreditCard, Download, Eye, FileQuestion, FileUp, Handshake, LayoutDashboard, Pencil, Plus, RotateCcw, Send, Settings2, Trash2, UserRound, Users, X } from "lucide-react";
+import { Activity, Archive, BarChart3, BookOpen, CalendarDays, ClipboardList, Clock3, CreditCard, Download, Eye, FileQuestion, FileUp, Handshake, LayoutDashboard, Pencil, Plus, RotateCcw, Send, Settings2, Trash2, UserRound, Users, X } from "lucide-react";
 import { isInitialEmptyQuizQuestion, parseQuizCsv, type QuizCsvPreview } from "@/lib/quiz-csv";
 import { parseCourseDocx, type CourseImportParseResult } from "@/lib/docx-course-import";
 import type { CourseImportPayload } from "@shared/course-import";
@@ -183,6 +183,16 @@ const isStaffRole = (role?: string | null) => ["admin", "super_admin", "instruct
 const isSuperAdmin = (role?: string | null) => ["admin", "super_admin", "superadmin"].includes(role || "");
 const canReviewPayments = (role?: string | null) => role === "super_admin";
 const sections = new Set<Section>(["overview", "courses", "modules", "quizzes", "events", "cbt", "users", "enrollments", "progress", "analytics", "announcements", "payments", "partnerships"]);
+
+function formatActivityTimestamp(value: Date | string | null | undefined) {
+  if (!value) return "No recorded sign-in yet";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Not available";
+  return new Intl.DateTimeFormat("en-NG", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+}
 
 function createEmptyQuizQuestion(): QuizQuestionDraft {
   return { id: crypto.randomUUID(), question: "", questionImageUrl: "", explanation: "", explanationImageUrl: "", options: ["", "", "", ""], correctAnswer: "1" };
@@ -383,6 +393,7 @@ export default function AdminCms() {
     queryKey: ["/api/admin/users", user?.id],
     queryFn: () => apiRequest("GET", `/api/admin/users?userId=${user?.id}`),
     enabled: canManage,
+    refetchInterval: 60_000,
   });
 
   const modules = useQuery<Module[]>({
@@ -838,6 +849,10 @@ export default function AdminCms() {
                                 <Badge variant={course.isPublished ? "default" : "secondary"}>{course.isPublished ? "Published" : "Draft"}</Badge>
                               </div>
                               <p className="mt-1 text-sm text-muted-foreground">{course.description}</p>
+                              <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+                                <Clock3 className="h-3.5 w-3.5" />
+                                Last updated {formatActivityTimestamp(course.updatedAt)}
+                              </p>
                             </div>
 
                             <div className="flex flex-wrap gap-2">
@@ -993,6 +1008,7 @@ export default function AdminCms() {
             <UsersPanel
               users={users.data || []}
               canCreateInstructor={isSuperAdmin(user.role)}
+              canViewInstructorActivity={isSuperAdmin(user.role)}
               draft={instructorDraft}
               setDraft={setInstructorDraft}
               onCreate={() => createInstructor.mutate()}
@@ -2272,9 +2288,10 @@ function QuizPanel({ courses, selectedCourseId, chooseCourse, modules, quizzes, 
   );
 }
 
-function UsersPanel({ users, canCreateInstructor, draft, setDraft, onCreate, pending, createdInstructor }: {
+function UsersPanel({ users, canCreateInstructor, canViewInstructorActivity, draft, setDraft, onCreate, pending, createdInstructor }: {
   users: Omit<User, "password">[];
   canCreateInstructor: boolean;
+  canViewInstructorActivity: boolean;
   draft: { fullName: string; email: string; password: string };
   setDraft: (draft: { fullName: string; email: string; password: string }) => void;
   onCreate: () => void;
@@ -2283,6 +2300,36 @@ function UsersPanel({ users, canCreateInstructor, draft, setDraft, onCreate, pen
 }) {
   return (
     <div className="space-y-6">
+      {canViewInstructorActivity && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><Activity className="h-5 w-5 text-primary" />Instructor activity</CardTitle>
+            <CardDescription>Last recorded sign-in for each instructor account. Activity tracking starts when this update is deployed.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {users.filter((account) => account.role === "instructor").length === 0 ? (
+              <p className="text-sm text-muted-foreground">No instructor accounts are registered yet.</p>
+            ) : (
+              <div className="space-y-3">
+                {users.filter((account) => account.role === "instructor").map((account) => (
+                  <div key={account.id} className="flex flex-col gap-2 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                      <p className="truncate font-medium">{account.fullName}</p>
+                      <p className="truncate text-sm text-muted-foreground">{account.email}</p>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm sm:shrink-0">
+                      <Clock3 className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-muted-foreground">Last login</span>
+                      <span className="font-medium">{formatActivityTimestamp(account.lastLoginAt)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {canCreateInstructor && (
         <Card>
           <CardHeader>

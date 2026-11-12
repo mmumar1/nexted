@@ -8,7 +8,7 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Lock, Play, BookOpen, Trophy, CheckCircle2, Bell, Medal } from "lucide-react";
+import { Clock3, Lock, Play, BookOpen, Trophy, CheckCircle2, Bell, Medal } from "lucide-react";
 import { Link } from "wouter";
 import { useAuth } from "@/lib/auth-context";
 import { apiRequest } from "@/lib/queryClient";
@@ -27,6 +27,7 @@ interface CourseWithProgress {
   progress?: number;
   totalModules?: number;
   completedModules?: number;
+  updatedAt?: Date | string;
 }
 
 interface LeaderboardTier {
@@ -58,6 +59,13 @@ function hashString(value: string): number {
     hash = Math.imul(hash, 16777619);
   }
   return hash >>> 0;
+}
+
+function formatCourseUpdatedAt(value: Date | string | undefined) {
+  if (!value) return "Update time unavailable";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Update time unavailable";
+  return `Updated ${new Intl.DateTimeFormat("en-NG", { dateStyle: "medium" }).format(date)}`;
 }
 
 function orderDashboardCourses(
@@ -285,6 +293,7 @@ export default function Dashboard() {
                     <div className="min-w-0">
                       <p className="truncate font-semibold text-foreground">{course.title}</p>
                       <p className="mt-1 text-sm text-muted-foreground">{course.completedModules} of {course.totalModules} modules completed</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{formatCourseUpdatedAt(course.updatedAt)}</p>
                     </div>
                     <span className="shrink-0 text-sm font-semibold text-primary">{course.progress}%</span>
                   </div>
@@ -413,6 +422,10 @@ function StudentCourseCard({
         <CardDescription className="line-clamp-3 text-sm leading-relaxed">
           {course.description}
         </CardDescription>
+        <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Clock3 className="h-3.5 w-3.5" />
+          {formatCourseUpdatedAt(course.updatedAt)}
+        </p>
       </CardHeader>
       {course.isEnrolled && (
         <CardContent className="pb-3">

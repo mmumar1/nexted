@@ -47,6 +47,7 @@ export interface IStorage {
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: string, data: Partial<Pick<User, "fullName" | "email" | "role">>): Promise<User | undefined>;
   getAllUsers(): Promise<User[]>;
+  recordStaffLogin(userId: string): Promise<void>;
 
   // Courses
   getCourse(id: string): Promise<Course | undefined>;
@@ -202,6 +203,7 @@ export class MemStorage implements IStorage {
       phoneNumber: null,
       whatsappNumber: null,
       referralCode: null,
+      lastLoginAt: null,
     });
 
     this.users.set("student-demo", {
@@ -219,6 +221,7 @@ export class MemStorage implements IStorage {
       phoneNumber: null,
       whatsappNumber: null,
       referralCode: null,
+      lastLoginAt: null,
     });
 
     this.users.set("subscriber-demo", {
@@ -236,6 +239,7 @@ export class MemStorage implements IStorage {
       phoneNumber: null,
       whatsappNumber: null,
       referralCode: null,
+      lastLoginAt: null,
     });
     
     // Seed initial data
@@ -254,6 +258,8 @@ export class MemStorage implements IStorage {
       instructorId: null,
       isPublished: true,
       publishedAt: new Date(),
+      createdAt: new Date(),
+      updatedAt: new Date(),
     };
     
     const course2: Course = {
@@ -266,6 +272,8 @@ export class MemStorage implements IStorage {
       instructorId: null,
       isPublished: true,
       publishedAt: new Date(),
+      createdAt: new Date(),
+      updatedAt: new Date(),
     };
     
     const course3: Course = {
@@ -278,6 +286,8 @@ export class MemStorage implements IStorage {
       instructorId: null,
       isPublished: true,
       publishedAt: new Date(),
+      createdAt: new Date(),
+      updatedAt: new Date(),
     };
 
     this.courses.set(course1.id, course1);
@@ -472,6 +482,7 @@ export class MemStorage implements IStorage {
       phoneNumber: insertUser.phoneNumber ?? null,
       whatsappNumber: insertUser.whatsappNumber ?? null,
       referralCode: insertUser.referralCode ?? null,
+      lastLoginAt: null,
     };
     this.users.set(id, user);
     return user;
@@ -487,6 +498,14 @@ export class MemStorage implements IStorage {
 
   async getAllUsers(): Promise<User[]> {
     return Array.from(this.users.values());
+  }
+
+  async recordStaffLogin(userId: string): Promise<void> {
+    const user = this.users.get(userId);
+    if (!user || !["instructor", "admin", "super_admin", "superadmin"].includes(user.role)) {
+      throw new Error("Staff profile was not found while recording login activity");
+    }
+    this.users.set(userId, { ...user, lastLoginAt: new Date() });
   }
 
   // Courses
@@ -514,6 +533,8 @@ export class MemStorage implements IStorage {
       instructorId: insertCourse.instructorId ?? null,
       isPublished: insertCourse.isPublished ?? false,
       publishedAt: insertCourse.publishedAt ?? null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
     };
     this.courses.set(id, course);
     return course;
@@ -554,7 +575,7 @@ export class MemStorage implements IStorage {
       });
       moduleIds.push(module.id);
     }
-    return course;
+    return await this.getCourse(course.id) ?? course;
   }
 
   async appendCourseDraftFromImport(courseId: string, payload: CourseImportPayload): Promise<Course> {
@@ -595,7 +616,7 @@ export class MemStorage implements IStorage {
       throw error;
     }
 
-    return course;
+    return this.courses.get(courseId) ?? course;
   }
 
   async updateCourse(id: string, data: Partial<InsertCourse>): Promise<Course | undefined> {
@@ -609,6 +630,7 @@ export class MemStorage implements IStorage {
       instructorId: data.instructorId ?? course.instructorId,
       isPublished: data.isPublished ?? course.isPublished,
       publishedAt: data.publishedAt ?? course.publishedAt,
+      updatedAt: new Date(),
     };
     this.courses.set(id, updated);
     return updated;
@@ -619,7 +641,12 @@ export class MemStorage implements IStorage {
   }
 
   async deleteModule(id: string): Promise<boolean> {
-    return this.modules.delete(id);
+    const module = this.modules.get(id);
+    if (!module) return false;
+    const deleted = this.modules.delete(id);
+    const course = this.courses.get(module.courseId);
+    if (course) this.courses.set(course.id, { ...course, updatedAt: new Date() });
+    return deleted;
   }
 
   // User Courses
@@ -717,6 +744,8 @@ export class MemStorage implements IStorage {
       duration: insertModule.duration ?? 30,
     };
     this.modules.set(id, module);
+    const course = this.courses.get(module.courseId);
+    if (course) this.courses.set(course.id, { ...course, updatedAt: new Date() });
     return module;
   }
 
@@ -738,6 +767,8 @@ export class MemStorage implements IStorage {
       duration: data.duration ?? module.duration,
     };
     this.modules.set(id, updated);
+    const course = this.courses.get(updated.courseId);
+    if (course) this.courses.set(course.id, { ...course, updatedAt: new Date() });
     return updated;
   }
 

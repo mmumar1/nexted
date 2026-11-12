@@ -15,6 +15,7 @@ export interface SupabaseProfile {
   phone_number: string | null;
   whatsapp_number: string | null;
   referral_code: string | null;
+  last_login_at?: string | null;
 }
 
 export function isStaffRole(role: string): boolean {
@@ -44,5 +45,6 @@ export function mapSupabaseProfileToUser(profile: SupabaseProfile): User {
     phoneNumber: profile.phone_number ?? null,
     whatsappNumber: profile.whatsapp_number ?? null,
     referralCode: profile.referral_code ?? null,
+    lastLoginAt: profile.last_login_at ? new Date(profile.last_login_at) : null,
   };
 }

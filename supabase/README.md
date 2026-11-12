@@ -19,6 +19,7 @@ This folder contains the starting database schema and row-level security setup f
 - `migrations/20261110000000_organization_partnership_interests.sql`: store non-school organization applications separately, with access limited to the server service role.
 - `migrations/20261112000000_bulk_course_import.sql`: create course drafts and nested modules/lessons atomically from a validated Word import.
 - `migrations/20261113000000_append_course_import.sql`: append validated Word-import modules atomically to an existing course.
+- `migrations/20261114000000_instructor_activity_course_updates.sql`: record staff sign-ins and refresh course update timestamps when modules change.
 
 ## Recommended Supabase setup
 
@@ -30,15 +31,20 @@ This folder contains the starting database schema and row-level security setup f
 6. Run `migrations/20261110000000_organization_partnership_interests.sql` to enable applications from other organizations.
 7. Run `migrations/20261112000000_bulk_course_import.sql` to enable atomic bulk course draft creation.
 8. Run `migrations/20261113000000_append_course_import.sql` to enable appending modules to existing courses.
-9. Register one user in Learnpedia, promote that user's profile to `super_admin`, then run `seed.sql`.
-10. Add the following environment variables to your Vercel app/server:
+9. Run `migrations/20261114000000_instructor_activity_course_updates.sql` to enable instructor login activity and course content update timestamps.
+10. Register one user in Learnpedia, promote that user's profile to `super_admin`, then run `seed.sql`.
+11. Add the following environment variables to your Vercel app/server:
    - `SUPABASE_URL` and `SUPABASE_ANON_KEY` (or the legacy `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`)
    - `SUPABASE_SERVICE_ROLE_KEY`
    - `STRIPE_SECRET_KEY`
    - `PAYSTACK_SECRET_KEY`
-11. Restart the server after setting environment variables.
+12. Restart the server after setting environment variables.
 
 The public partner application page lets applicants choose either a school form or a separate other-organization form. Both save through server APIs into separate tables. Anonymous and regular authenticated clients have no direct table access; super admins can review both types in **Admin CMS → Partner applications**.
+
+## Instructor activity and course updates
+
+The **Admin CMS → Users** page shows each instructor's last recorded sign-in. Tracking starts after this migration and the updated application are deployed; earlier sign-in history is not available. Course cards show the last update time, including course module and lesson additions, edits, and deletions.
 
 ## Bulk course import
 

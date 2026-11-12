@@ -71,6 +71,29 @@ create trigger modules_updated_at
 before update on public.modules
 for each row execute procedure public.update_updated_at();
 
+create or replace function public.touch_course_updated_at_from_module()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  if tg_op = 'DELETE' then
+    update public.courses set updated_at = now() where id = old.course_id;
+    return old;
+  end if;
+
+  update public.courses set updated_at = now() where id = new.course_id;
+  if tg_op = 'UPDATE' and old.course_id is distinct from new.course_id then
+    update public.courses set updated_at = now() where id = old.course_id;
+  end if;
+  return new;
+end;
+$$;
+
+create trigger modules_touch_course_updated_at
+after insert or update or delete on public.modules
+for each row execute procedure public.touch_course_updated_at_from_module();
+
 create trigger projects_updated_at
 before update on public.projects
 for each row execute procedure public.update_updated_at();

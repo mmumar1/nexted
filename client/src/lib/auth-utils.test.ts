@@ -39,7 +39,17 @@ describe("Supabase auth helpers", () => {
       phoneNumber: "+234 801 234 5678",
       whatsappNumber: null,
       referralCode: "WELCOME",
+      lastLoginAt: null,
     });
+  });
+
+  it("maps the last recorded sign-in timestamp", () => {
+    const user = mapSupabaseProfileToUser({
+      ...profile,
+      last_login_at: "2026-11-14T12:30:00.000Z",
+    });
+
+    assert.equal(user.lastLoginAt?.toISOString(), "2026-11-14T12:30:00.000Z");
   });
 
   it("maps a missing subscription date to null", () => {
